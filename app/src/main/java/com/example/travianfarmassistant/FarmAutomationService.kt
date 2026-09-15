@@ -261,6 +261,7 @@ class FarmAutomationService : Service() {
     private var resourceBuilderCycleStartedAt = 0L
     private var townBuilderCycleStartedAt = 0L
     private var holdCelebrationCycleStartedAt = 0L
+    private var holdCelebrationTransferPending = false
     private var recoveringService = false
     private var webViewRecoveryInProgress = false
     private var lastAutomationUrl = ""
@@ -2454,6 +2455,7 @@ private fun clickTransferSelected() {
             .putLong("hold_celebration_cycle_started_at", holdCelebrationCycleStartedAt)
             .apply()
         holdCelebrationIndex = 0
+        holdCelebrationTransferPending = false
         logEvent("Hold Celebration: START — ${holdCelebrationVillages.size} village")
         updateNotification("Hold Celebration — ${holdCelebrationVillages.size} village")
         processHoldCelebrationVillage()
@@ -2486,6 +2488,7 @@ private fun clickTransferSelected() {
         val name = pair.second
         handler.postDelayed({
             if (!running || !holdCelebrationInProgress) return@postDelayed
+
             val js = """
                 (() => {
                     const visible = el => {
@@ -2494,43 +2497,124 @@ private fun clickTransferSelected() {
                         return s.display !== 'none' && s.visibility !== 'hidden' &&
                                s.opacity !== '0' && r.width > 0 && r.height > 0;
                     };
-                    const norm = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                    const norm = s => String(s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
                     const controls = [
                         ...document.querySelectorAll('button'),
                         ...document.querySelectorAll('input[type=button],input[type=submit]'),
                         ...document.querySelectorAll('[role="button"]'),
                         ...document.querySelectorAll('a')
                     ].filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
-
-                    const btn = controls.find(el => norm(
+                    const textOf = el => norm(
                         el.innerText || el.textContent || el.value || el.title ||
                         el.getAttribute('aria-label') || ''
-                    ) === 'hold');
+                    );
+                    const hold = controls.find(el => textOf(el) === 'hold');
+                    const exchange = controls.find(el => /exchange\\s+resources/i.test(textOf(el)));
 
-                    if (!btn) return JSON.stringify({state:'not_found'});
-                    btn.scrollIntoView({block:'center', inline:'center'});
-                    // Klik Hold memicu navigasi Travian, sehingga callback evaluateJavascript
-                    // kadang tidak sempat kembali ke Android. Kirim log native sebelum klik.
-                    try { AndroidFarm.onHoldCelebrationClick(${JSONObject.quote("$name")}); } catch (_) {}
-                    try { btn.click(); } catch (_) {
-                        ['mousedown','mouseup','click'].forEach(type => {
-                            try { btn.dispatchEvent(new MouseEvent(type, {
-                                bubbles:true, cancelable:true, view:window
-                            })); } catch (_) {}
-                        });
+                    if (hold) {
+                        hold.scrollIntoView({block:'center', inline:'center'});
+                        try { AndroidFarm.onHoldCelebrationClick(${JSONObject.quote("$name")}); } catch (_) {}
+                        try { hold.click(); } catch (_) {
+                            ['mousedown','mouseup','click'].forEach(type => {
+                                try { hold.dispatchEvent(new MouseEvent(type, {bubbles:true, cancelable:true, view:window})); } catch (_) {}
+                            });
+                        }
+                        return JSON.stringify({state:'hold_clicked'});
                     }
-                    return JSON.stringify({state:'clicked'});
+
+                    if (exchange) {
+                        const transfer = document.querySelector('.inlineIcon.resource.transfer');
+                        if (!transfer || !visible(transfer)) {
+                            return JSON.stringify({state:'exchange_found_transfer_not_found'});
+                        }
+                        transfer.scrollIntoView({block:'center', inline:'center'});
+                        try { transfer.click(); } catch (_) {
+                            try { transfer.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window})); } catch (_) {}
+                        }
+                        return JSON.stringify({state:'exchange_found_transfer_clicked'});
+                    }
+
+                    return JSON.stringify({state:'nothing_found'});
                 })();
             """.trimIndent()
+
             automationWebView()?.evaluateJavascript(js) { raw ->
                 val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
-                if (!result.contains("\"state\":\"clicked\"")) {
-                    logEvent("Nama Village $name Hold Celebration: tombol Hold tidak ditemukan")
+                when {
+                    result.contains("\\\"state\\\":\\\"hold_clicked\\\"") -> {
+                        holdCelebrationTransferPending = false
+                        holdCelebrationIndex++
+                        handler.postDelayed({ processHoldCelebrationVillage() }, 1200L)
+                    }
+                    result.contains("\\\"state\\\":\\\"exchange_found_transfer_clicked\\\"") -> {
+                        holdCelebrationTransferPending = true
+                        logEvent("Hold Celebration: $name — Exchange resources ditemukan, membuka Transfer Resource Hero")
+                        handler.postDelayed({ clickCelebrationTransferSelected(name) }, 1200L)
+                    }
+                    result.contains("\\\"state\\\":\\\"exchange_found_transfer_not_found\\\"") -> {
+                        logEvent("Hold Celebration: $name — Exchange resources ditemukan tetapi Transfer Resource Hero tidak ditemukan")
+                        holdCelebrationIndex++
+                        handler.postDelayed({ processHoldCelebrationVillage() }, 1200L)
+                    }
+                    else -> {
+                        logEvent("Hold Celebration: $name — tombol Hold/Exchange resources tidak ditemukan")
+                        holdCelebrationIndex++
+                        handler.postDelayed({ processHoldCelebrationVillage() }, 1200L)
+                    }
                 }
-                holdCelebrationIndex++
-                handler.postDelayed({ processHoldCelebrationVillage() }, 1200L)
             }
         }, 2000L)
+    }
+
+    private fun clickCelebrationTransferSelected(name: String) {
+        if (!running || !holdCelebrationInProgress || !holdCelebrationTransferPending) return
+
+        val js = """
+            (() => {
+                const visible = el => {
+                    if (!el) return false;
+                    const s = getComputedStyle(el), r = el.getBoundingClientRect();
+                    return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
+                };
+                const norm = s => String(s || '').replace(/\\s+/g,' ').trim().toLowerCase();
+                const controls = [
+                    ...document.querySelectorAll('button'),
+                    ...document.querySelectorAll('input[type=button],input[type=submit]'),
+                    ...document.querySelectorAll('[role="button"]'),
+                    ...document.querySelectorAll('a')
+                ].filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+                const textOf = el => norm(el.innerText || el.textContent || el.value || el.title || el.getAttribute('aria-label') || '');
+                const btn = controls.find(el => /transfer\\s+selected/i.test(textOf(el)));
+                if (!btn) return JSON.stringify({state:'not_found'});
+                btn.scrollIntoView({block:'center', inline:'center'});
+                try { btn.click(); } catch (_) {
+                    ['mousedown','mouseup','click'].forEach(type => {
+                        try { btn.dispatchEvent(new MouseEvent(type, {bubbles:true, cancelable:true, view:window})); } catch (_) {}
+                    });
+                }
+                return JSON.stringify({state:'clicked'});
+            })();
+        """.trimIndent()
+
+        automationWebView()?.evaluateJavascript(js) { raw ->
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            if (result.contains("\\\"state\\\":\\\"clicked\\\"")) {
+                logEvent("Hold Celebration: $name — Transfer selected diklik, menunggu refresh")
+                handler.postDelayed({
+                    if (!running || !holdCelebrationInProgress) return@postDelayed
+                    holdCelebrationTransferPending = false
+                    holdCelebrationIndex++
+                    // Paksa refresh halaman Celebration setelah transfer selesai.
+                    val id = holdCelebrationVillages.getOrNull(holdCelebrationIndex - 1)?.first.orEmpty()
+                    automationWebView()?.loadUrl("${server}/build.php?id=30&gid=24&newdid=$id")
+                    // Index dikembalikan karena village yang sama harus diproses lagi untuk klik Hold.
+                    holdCelebrationIndex--
+                }, 2500L)
+            } else {
+                logEvent("Hold Celebration: $name — tombol Transfer selected belum ditemukan")
+                handler.postDelayed({ clickCelebrationTransferSelected(name) }, 800L)
+            }
+        }
     }
 
     private fun finishHoldCelebrationCycle() {
@@ -2546,6 +2630,7 @@ private fun clickTransferSelected() {
             holdCelebrationCycleStartedAt = 0L
         }
         holdCelebrationInProgress = false
+        holdCelebrationTransferPending = false
         holdCelebrationVillages.clear()
         holdCelebrationIndex = 0
         logEvent("Hold Celebration: END")
