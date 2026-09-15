@@ -358,8 +358,30 @@ class FarmAutomationService : Service() {
                 val cycleActive = getSharedPreferences(PREFS, MODE_PRIVATE)
                     .getBoolean("cycle_active", false)
 
+                // Scheduler heartbeat juga menjadi pengaman untuk Refresh Village.
+                // Jika callback +30 detik sempat hilang/tertunda karena WebView atau
+                // Android background scheduling, refresh tetap dipicu dari timestamp
+                // countdown yang tersimpan.
+                val countdownStartedAt = getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .getLong("countdown_started_at", 0L)
+                val refreshDue = countdownStartedAt > 0L &&
+                    now >= countdownStartedAt + 30_000L &&
+                    scheduledRefreshForNextRun &&
+                    !villageRefreshInProgress &&
+                    !villageRefreshCompleted
+                if (!cycleActive && refreshDue) {
+                    logEvent("AUTO REFRESH VILLAGE: heartbeat mendeteksi jadwal +30 detik — menjalankan refresh")
+                    handler.removeCallbacks(delayedVillageRefreshRunnable)
+                    handler.post {
+                        if (running && !villageRefreshInProgress && !villageRefreshCompleted) {
+                            delayedVillageRefreshRunnable.run()
+                        }
+                    }
+                }
+
                 if (!cycleActive && nextAt > 0L && now >= nextAt) {
                     handler.removeCallbacks(nextRunRunnable)
+                    logEvent("Scheduler heartbeat: Countdown 00:00 — memeriksa Refresh Village sebelum CICLE")
                     triggerScheduledCycle()
                 }
             } finally {
@@ -387,38 +409,35 @@ class FarmAutomationService : Service() {
                 val countdownExpired = nextAt > 0L && now >= nextAt
 
                 if (!cycleActive && countdownExpired) {
-                    logEvent("Scheduler 4 Menit: Countdown 00:00 — reset proses dan mulai CICLE")
+                    logEvent("Scheduler 4 Menit: Countdown 00:00 — memastikan REFRESH VILLAGE selesai sebelum CICLE")
 
-                    // Hentikan pekerjaan yang mungkin masih menahan WebView/Handler.
+                    // Jangan lagi memalsukan villageRefreshCompleted=true. Jika refresh
+                    // belum sempat dijalankan, jalankan sekarang. Jika sedang berjalan,
+                    // biarkan sampai selesai/timeout. Setelah selesai, closeAutomaticVillageRefresh()
+                    // akan memanggil triggerScheduledCycle().
+                    val countdownStartedAt = getSharedPreferences(PREFS, MODE_PRIVATE)
+                        .getLong("countdown_started_at", 0L)
+                    val refreshDue = countdownStartedAt > 0L &&
+                        now >= countdownStartedAt + 30_000L &&
+                        scheduledRefreshForNextRun &&
+                        !villageRefreshInProgress &&
+                        !villageRefreshCompleted
+                    if (refreshDue) {
+                        handler.removeCallbacks(delayedVillageRefreshRunnable)
+                        handler.post {
+                            if (running && !villageRefreshInProgress && !villageRefreshCompleted) {
+                                delayedVillageRefreshRunnable.run()
+                            }
+                        }
+                    }
+
                     handler.removeCallbacks(nextRunRunnable)
-                    handler.removeCallbacks(delayedVillageRefreshRunnable)
-                    handler.removeCallbacks(cycleWatchdogRunnable)
-                    villageRefreshTimeoutRunnable?.let { handler.removeCallbacks(it) }
-                    villageRefreshTimeoutRunnable = null
-                    try { automationWebView()?.stopLoading() } catch (_: Exception) {}
-
-                    pendingStartAll = false
-                    builderInProgress = false
-                    loginInProgress = false
-                    reloginRequested = false
-                    countdownCyclePending = false
-                    scheduledRefreshForNextRun = false
-                    villageRefreshInProgress = false
-                    villageRefreshInspectInFlight = false
-                    villageRefreshCompleted = true
-                    villageRefreshClosed = true
-                    farmListCycleComplete = false
-                    pendingUpgradeUrl = ""
-                    pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
-                    heroTransferCompleted = false
-                    nextAt = 0L
-                    updateNextRun(0L)
-                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                        .putBoolean("cycle_active", false)
-                        .apply()
-
-                    handler.post {
-                        if (running) triggerScheduledCycle()
+                    if (villageRefreshCompleted && villageRefreshClosed) {
+                        nextAt = 0L
+                        updateNextRun(0L)
+                        handler.post { if (running) triggerScheduledCycle() }
+                    } else {
+                        handler.post { if (running) triggerScheduledCycle() }
                     }
                 }
             } finally {
