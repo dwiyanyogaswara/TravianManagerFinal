@@ -2486,13 +2486,20 @@ private fun clickTransferSelected() {
     }
 
     private fun processHoldCelebrationVillage() {
+        celebrationDebug("========== processHoldCelebrationVillage() ==========")
+        celebrationDebug("STATE BEFORE: running=$running holdCelebrationInProgress=$holdCelebrationInProgress holdCelebrationTransferPending=$holdCelebrationTransferPending index=$holdCelebrationIndex total=${holdCelebrationVillages.size}")
+
         if (!running || !holdCelebrationInProgress) {
-            celebrationDebug("VILLAGE BLOCKED: running=$running inProgress=$holdCelebrationInProgress")
+            celebrationDebug("BLOCKED: running=$running holdCelebrationInProgress=$holdCelebrationInProgress")
             return
         }
+
         val pair = holdCelebrationVillages.getOrNull(holdCelebrationIndex)
+        celebrationDebug("VILLAGE LOOKUP: index=$holdCelebrationIndex result=${if (pair != null) "FOUND" else "NULL"}")
+
         if (pair == null) {
             celebrationDebug("VILLAGE LOOP END: index=$holdCelebrationIndex size=${holdCelebrationVillages.size}")
+            celebrationDebug("ACTION: finishHoldCelebrationCycle()")
             finishHoldCelebrationCycle()
             return
         }
@@ -2504,13 +2511,26 @@ private fun clickTransferSelected() {
         val target = "${server}/build.php?id=30&gid=24&newdid=$id"
 
         celebrationDebug("---------- VILLAGE START ----------")
-        celebrationDebug("index=${holdCelebrationIndex + 1}/${holdCelebrationVillages.size} name=$name id=$id")
-        celebrationDebug("server=$server")
-        celebrationDebug("Celebration URL=$target")
+        celebrationDebug("VILLAGE POSITION: ${holdCelebrationIndex + 1}/${holdCelebrationVillages.size}")
+        celebrationDebug("VILLAGE NAME: $name")
+        celebrationDebug("VILLAGE ID: $id")
+        celebrationDebug("SERVER: $server")
+        celebrationDebug("TARGET URL: $target")
+        celebrationDebug("STATE AFTER RESET: inspectAttempt=$holdCelebrationInspectAttempt transferAttempt=$holdCelebrationTransferAttempt transferPending=$holdCelebrationTransferPending")
+
         logEvent("Hold Celebration: [${holdCelebrationIndex + 1}/${holdCelebrationVillages.size}] $name — buka Celebration")
         updateNotification("Hold Celebration — $name")
-        celebrationDebug("ACTION: loadUrl(Celebration)")
-        automationWebView()?.loadUrl(target)
+
+        val webView = automationWebView()
+        celebrationDebug("WEBVIEW CHECK: exists=${webView != null} currentUrl=${webView?.url.orEmpty()}")
+        if (webView == null) {
+            celebrationDebug("ERROR: automationWebView() == null — Celebration page tidak dapat dibuka")
+            return
+        }
+
+        celebrationDebug("ACTION: WebView.loadUrl($target)")
+        webView.loadUrl(target)
+        celebrationDebug("ACTION COMPLETE: loadUrl sudah dipanggil — waiting for onPageFinished")
     }
 
     private fun processHoldCelebrationPage() {
@@ -3579,6 +3599,19 @@ private fun clickTransferSelected() {
     }
 
     private fun logEvent(message: String) {
+        // Simpan semua debug Celebration ke log file.
+        if (message.startsWith("[CELEBRATION DEBUG]")) {
+            val cycleTagged =
+                if (cycleNumber > 0) "[CYCLE $cycleNumber] $message" else message
+            val line = "${logTimeFormat.format(Date())} | $cycleTagged"
+            try {
+                openFileOutput(logFileName, MODE_APPEND).bufferedWriter().use {
+                    it.appendLine(line)
+                }
+            } catch (_: Exception) {}
+            return
+        }
+
         // END Town Builder harus tetap dicatat walaupun flag townBuilderInProgress
         // sudah dimatikan sebelum fungsi ini dipanggil.
         if (message == "Town Builder: END") {
