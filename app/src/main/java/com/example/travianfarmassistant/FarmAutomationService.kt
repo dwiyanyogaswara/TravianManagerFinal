@@ -2435,21 +2435,12 @@ private fun clickTransferSelected() {
     private var holdCelebrationInspectAttempt = 0
     private var holdCelebrationTransferAttempt = 0
 
-    private fun celebrationDebug(message: String) {
-        logEvent("[CELEBRATION DEBUG] $message")
-    }
-
     private fun startHoldCelebrationCycle() {
         if (!running) {
-            celebrationDebug("START BLOCKED: running=false")
             return
         }
-
-        celebrationDebug("========== CELEBRATION START ==========")
         val records = loadVillageDataRecordsFromPrefs()
-        celebrationDebug("DB records=${records.size}")
         records.forEachIndexed { i, r ->
-            celebrationDebug("DB[$i] id=${r.id} name=${r.namaVillage} isHoldCelebration=${r.isHoldCelebration}")
         }
 
         holdCelebrationVillages = records
@@ -2457,14 +2448,10 @@ private fun clickTransferSelected() {
             .map { it.id to it.namaVillage }
             .distinctBy { it.first }
             .toMutableList()
-
-        celebrationDebug("Selected Celebration villages=${holdCelebrationVillages.size}")
         holdCelebrationVillages.forEachIndexed { i, pair ->
-            celebrationDebug("TARGET[$i] id=${pair.first} name=${pair.second}")
         }
 
         if (holdCelebrationVillages.isEmpty()) {
-            celebrationDebug("BLOCKED: no village with isHoldCelebration=true")
             finishHoldCelebrationCycle()
             return
         }
@@ -2478,28 +2465,19 @@ private fun clickTransferSelected() {
         holdCelebrationTransferPending = false
         holdCelebrationInspectAttempt = 0
         holdCelebrationTransferAttempt = 0
-
-        celebrationDebug("STATE: holdCelebrationInProgress=true index=0")
-        logEvent("Hold Celebration: START — ${holdCelebrationVillages.size} village")
         updateNotification("Hold Celebration — ${holdCelebrationVillages.size} village")
         processHoldCelebrationVillage()
     }
 
     private fun processHoldCelebrationVillage() {
-        celebrationDebug("========== processHoldCelebrationVillage() ==========")
-        celebrationDebug("STATE BEFORE: running=$running holdCelebrationInProgress=$holdCelebrationInProgress holdCelebrationTransferPending=$holdCelebrationTransferPending index=$holdCelebrationIndex total=${holdCelebrationVillages.size}")
 
         if (!running || !holdCelebrationInProgress) {
-            celebrationDebug("BLOCKED: running=$running holdCelebrationInProgress=$holdCelebrationInProgress")
             return
         }
 
         val pair = holdCelebrationVillages.getOrNull(holdCelebrationIndex)
-        celebrationDebug("VILLAGE LOOKUP: index=$holdCelebrationIndex result=${if (pair != null) "FOUND" else "NULL"}")
 
         if (pair == null) {
-            celebrationDebug("VILLAGE LOOP END: index=$holdCelebrationIndex size=${holdCelebrationVillages.size}")
-            celebrationDebug("ACTION: finishHoldCelebrationCycle()")
             finishHoldCelebrationCycle()
             return
         }
@@ -2509,38 +2487,21 @@ private fun clickTransferSelected() {
         holdCelebrationInspectAttempt = 0
         holdCelebrationTransferAttempt = 0
         val target = "${server}/build.php?id=30&gid=24&newdid=$id"
-
-        celebrationDebug("---------- VILLAGE START ----------")
-        celebrationDebug("VILLAGE POSITION: ${holdCelebrationIndex + 1}/${holdCelebrationVillages.size}")
-        celebrationDebug("VILLAGE NAME: $name")
-        celebrationDebug("VILLAGE ID: $id")
-        celebrationDebug("SERVER: $server")
-        celebrationDebug("TARGET URL: $target")
-        celebrationDebug("STATE AFTER RESET: inspectAttempt=$holdCelebrationInspectAttempt transferAttempt=$holdCelebrationTransferAttempt transferPending=$holdCelebrationTransferPending")
-
-        logEvent("Hold Celebration: [${holdCelebrationIndex + 1}/${holdCelebrationVillages.size}] $name — buka Celebration")
         updateNotification("Hold Celebration — $name")
 
         val webView = automationWebView()
-        celebrationDebug("WEBVIEW CHECK: exists=${webView != null} currentUrl=${webView?.url.orEmpty()}")
         if (webView == null) {
-            celebrationDebug("ERROR: automationWebView() == null — Celebration page tidak dapat dibuka")
             return
         }
-
-        celebrationDebug("ACTION: WebView.loadUrl($target)")
         webView.loadUrl(target)
-        celebrationDebug("ACTION COMPLETE: loadUrl sudah dipanggil — waiting for onPageFinished")
     }
 
     private fun processHoldCelebrationPage() {
         if (!running || !holdCelebrationInProgress) {
-            celebrationDebug("PAGE BLOCKED: running=$running inProgress=$holdCelebrationInProgress")
             return
         }
         val pair = holdCelebrationVillages.getOrNull(holdCelebrationIndex)
         if (pair == null) {
-            celebrationDebug("PAGE BLOCKED: no village at index=$holdCelebrationIndex")
             finishHoldCelebrationCycle()
             return
         }
@@ -2550,12 +2511,8 @@ private fun clickTransferSelected() {
         holdCelebrationInspectAttempt++
         val attempt = holdCelebrationInspectAttempt
 
-        celebrationDebug("PAGE ENTER: village=$name id=$id attempt=$attempt")
-        celebrationDebug("WEBVIEW URL=${automationWebView()?.url.orEmpty()}")
-
         handler.postDelayed({
             if (!running || !holdCelebrationInProgress) {
-                celebrationDebug("DOM INSPECT CANCELLED: running=$running inProgress=$holdCelebrationInProgress")
                 return@postDelayed
             }
 
@@ -2612,56 +2569,38 @@ private fun clickTransferSelected() {
                     });
                 })();
             """.trimIndent()
-
-            celebrationDebug("ACTION: evaluateJavascript DOM inspection attempt=$attempt")
             automationWebView()?.evaluateJavascript(js) { raw ->
                 val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
-                celebrationDebug("DOM RESULT rawLength=${raw.orEmpty().length} parsedLength=${result.length}")
-                celebrationDebug("DOM RESULT=$result")
 
                 val holdFound = Regex("\\\"holdCount\\\":(\\d+)").find(result)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
                 val exchangeFound = Regex("\\\"exchangeCount\\\":(\\d+)").find(result)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
                 val transferFound = Regex("\\\"transferHeroCount\\\":(\\d+)").find(result)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
 
-                celebrationDebug("DECISION INPUT: hold=$holdFound exchange=$exchangeFound transferHero=$transferFound")
-
                 when {
                     holdFound > 0 -> {
-                        celebrationDebug("DECISION=HOLD_DIRECT")
-                        celebrationDebug("ACTION: invoke onHoldCelebrationClick($name)")
                         holdCelebrationTransferPending = false
                         holdCelebrationInspectAttempt = 0
                         automationWebView()?.evaluateJavascript("""(() => { const els=[...document.querySelectorAll('button,input[type=button],input[type=submit],[role="button"],a')]; const n=s=>String(s||'').replace(/\\s+/g,' ').trim(); const h=els.find(e=>{const x=getComputedStyle(e),r=e.getBoundingClientRect();return x.display!=='none'&&x.visibility!=='hidden'&&r.width>0&&r.height>0&&!e.disabled&&/^hold$/i.test(n(e.innerText||e.textContent||e.value||e.title||e.getAttribute('aria-label')))}); if(!h)return JSON.stringify({state:'hold_missing'}); h.scrollIntoView({block:'center',inline:'center'}); try{h.click();}catch(e){try{['mousedown','mouseup','click'].forEach(t=>h.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})))}catch(_){} } return JSON.stringify({state:'hold_clicked',html:(h.outerHTML||'').slice(0,1200)}); })();""".trimIndent()) { holdRaw ->
                             val holdResult = holdRaw.orEmpty().trim('"').replace("\\\"", "\"")
-                            celebrationDebug("HOLD CLICK RESULT=$holdResult")
                             if (holdResult.contains("hold_clicked")) {
-                                celebrationDebug("HOLD SUCCESS: $name")
                                 handler.postDelayed({
                                     holdCelebrationIndex++
                                     processHoldCelebrationVillage()
                                 }, 1200L)
                             } else {
-                                celebrationDebug("BLOCKED=HOLD_CLICK_FAILED; retry page inspection")
                                 handler.postDelayed({ processHoldCelebrationPage() }, 1000L)
                             }
                         }
                     }
                     exchangeFound > 0 -> {
-                        celebrationDebug("DECISION=EXCHANGE_RESOURCES")
                         if (transferFound <= 0) {
-                            celebrationDebug("BLOCKED=EXCHANGE_FOUND_BUT_TRANSFER_HERO_NOT_FOUND")
                             if (attempt < 15) {
-                                celebrationDebug("RETRY: DOM inspection in 1000ms attempt=${attempt + 1}/15")
                                 handler.postDelayed({ processHoldCelebrationPage() }, 1000L)
                             } else {
-                                celebrationDebug("FAILED: Transfer Hero not found after 15 attempts; village remains pending")
                                 handler.postDelayed({ processHoldCelebrationPage() }, 3000L)
                             }
                             return@evaluateJavascript
                         }
-
-                        celebrationDebug("TRANSFER HERO DOM FOUND")
-                        celebrationDebug("ACTION: click Transfer Resource Hero")
                         holdCelebrationTransferPending = true
                         holdCelebrationTransferAttempt = 0
                         val clickJs = """
@@ -2676,24 +2615,17 @@ private fun clickTransferSelected() {
                         """.trimIndent()
                         automationWebView()?.evaluateJavascript(clickJs) { clickRaw ->
                             val clickResult = clickRaw.orEmpty().trim('"').replace("\\\"", "\"")
-                            celebrationDebug("TRANSFER HERO CLICK RESULT=$clickResult")
                             if (clickResult.contains("transfer_hero_clicked")) {
-                                celebrationDebug("TRANSFER HERO CLICK SUCCESS")
                                 handler.postDelayed({ clickCelebrationTransferSelected(name) }, 1000L)
                             } else {
-                                celebrationDebug("BLOCKED=TRANSFER_HERO_CLICK_FAILED")
                                 handler.postDelayed({ processHoldCelebrationPage() }, 1000L)
                             }
                         }
                     }
                     else -> {
-                        celebrationDebug("DECISION=NOTHING_FOUND")
-                        celebrationDebug("BLOCKED: Hold and Exchange resources not detected")
                         if (attempt < 15) {
-                            celebrationDebug("RETRY: DOM inspection in 1000ms attempt=${attempt + 1}/15")
                             handler.postDelayed({ processHoldCelebrationPage() }, 1000L)
                         } else {
-                            celebrationDebug("FAILED: no Hold/Exchange after 15 attempts; keep village active for further retry")
                             handler.postDelayed({ processHoldCelebrationPage() }, 3000L)
                         }
                     }
@@ -2704,15 +2636,11 @@ private fun clickTransferSelected() {
 
     private fun clickCelebrationTransferSelected(name: String) {
         if (!running || !holdCelebrationInProgress || !holdCelebrationTransferPending) {
-            celebrationDebug("TRANSFER SELECTED BLOCKED: running=$running inProgress=$holdCelebrationInProgress pending=$holdCelebrationTransferPending")
             return
         }
 
         holdCelebrationTransferAttempt++
         val attempt = holdCelebrationTransferAttempt
-        celebrationDebug("========== TRANSFER SELECTED ==========")
-        celebrationDebug("village=$name attempt=$attempt")
-        celebrationDebug("WEBVIEW URL=${automationWebView()?.url.orEmpty()}")
 
         // Samakan persis pola pencarian tombol dengan Resource Builder / Town Builder.
         // Hanya cari elemen kontrol yang visible dan benar-benar clickable; jangan scan
@@ -2808,18 +2736,14 @@ private fun clickTransferSelected() {
 
         automationWebView()?.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
-            celebrationDebug("TRANSFER SELECTED RESULT=$result")
 
             if (result.contains("\"state\":\"clicked\"")) {
-                celebrationDebug("TRANSFER SELECTED CLICK SUCCESS — tunggu popup memproses transfer")
                 handler.postDelayed({
                     verifyCelebrationTransferSelectedCompleted(name)
                 }, 1200L)
             } else if (attempt < 15) {
-                celebrationDebug("TRANSFER SELECTED belum ditemukan, retry $attempt/15")
                 handler.postDelayed({ clickCelebrationTransferSelected(name) }, 500L)
             } else {
-                celebrationDebug("TRANSFER SELECTED tidak ditemukan setelah 15 percobaan; ulang setelah 3000ms")
                 holdCelebrationTransferAttempt = 0
                 handler.postDelayed({ clickCelebrationTransferSelected(name) }, 3000L)
             }
@@ -2864,23 +2788,18 @@ private fun clickTransferSelected() {
 
         automationWebView()?.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
-            celebrationDebug("TRANSFER SELECTED VERIFY=$result")
 
             val stillThere = result.contains("\"stillThere\":true")
             if (stillThere) {
-                celebrationDebug("TRANSFER SELECTED masih terlihat; klik ulang")
                 handler.postDelayed({ clickCelebrationTransferSelected(name) }, 500L)
                 return@evaluateJavascript
             }
-
-            celebrationDebug("TRANSFER SELECTED selesai — reload Celebration")
             holdCelebrationTransferPending = false
             holdCelebrationInspectAttempt = 0
             holdCelebrationTransferAttempt = 0
             val id = holdCelebrationVillages.getOrNull(holdCelebrationIndex)?.first.orEmpty()
             handler.postDelayed({
                 if (!running || !holdCelebrationInProgress) return@postDelayed
-                celebrationDebug("ACTION: reload Celebration after transfer id=$id")
                 automationWebView()?.loadUrl("${server}/build.php?id=30&gid=24&newdid=$id")
             }, 800L)
         }
@@ -2894,7 +2813,6 @@ private fun clickTransferSelected() {
                 .putLong("hold_celebration_cycle_duration_ms", duration)
                 .putLong("hold_celebration_cycle_started_at", 0L)
                 .apply()
-            celebrationDebug("DURATION=${formatDuration(duration)}")
             holdCelebrationCycleStartedAt = 0L
         }
         holdCelebrationInProgress = false
@@ -2903,8 +2821,6 @@ private fun clickTransferSelected() {
         holdCelebrationIndex = 0
         holdCelebrationInspectAttempt = 0
         holdCelebrationTransferAttempt = 0
-        celebrationDebug("========== CELEBRATION END ==========")
-        logEvent("Hold Celebration: END")
         logEvent("CICLE END")
         scheduleNextRandomRun()
         updateNotification("Next Run ${timeFormat.format(Date(nextAt))} | dalam ${formatDuration((nextAt - System.currentTimeMillis()).coerceAtLeast(0L))}")
@@ -3854,10 +3770,9 @@ private fun clickTransferSelected() {
 
         @JavascriptInterface
         fun onHoldCelebrationClick(villageName: String) {
-            debugTrace("ENTER onHoldCelebrationClick")
-            handler.post {
+                        handler.post {
                 if (running && holdCelebrationInProgress) {
-                    logEvent("Nama Village $villageName Hold Celebration Success")
+                    logEvent("Celebration ($villageName) Success")
                 }
             }
         }
