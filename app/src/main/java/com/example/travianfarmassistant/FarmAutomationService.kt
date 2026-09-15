@@ -262,6 +262,56 @@ class FarmAutomationService : Service() {
     private var townBuilderCycleStartedAt = 0L
     private var holdCelebrationCycleStartedAt = 0L
     private var holdCelebrationTransferPending = false
+
+    // Batas maksimum masing-masing modul Builder/Celebration. Jika satu modul
+    // macet lebih dari 4 menit, modul dianggap selesai lalu alur dilanjutkan.
+    private val moduleMaxDurationMs = 4 * 60_000L
+
+    private val resourceBuilderTimeoutRunnable = Runnable {
+        if (!running || !builderInProgress || townBuilderInProgress || resourceBuilderCycleStartedAt <= 0L) return@Runnable
+        logEvent("Res Builder over 4 min, process stop")
+        try { automationWebView()?.stopLoading() } catch (_: Exception) {}
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong("resource_cycle_started_at", 0L).apply()
+        resourceBuilderCycleStartedAt = 0L
+        builderInProgress = false
+        builderVillages.clear()
+        builderVillageIndex = 0
+        pendingBuilderResourceHref = ""
+        pendingUpgradeUrl = ""
+        pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+        heroTransferCompleted = false
+        inventoryUseAttempt = 0
+        builderStage = "IDLE"
+        if (townBuilderEnabled) startTownBuilderCycle() else startHoldCelebrationCycle()
+    }
+
+    private val townBuilderTimeoutRunnable = Runnable {
+        if (!running || !townBuilderInProgress || townBuilderCycleStartedAt <= 0L) return@Runnable
+        logEvent("Town Builder over 4 min, process stop")
+        try { automationWebView()?.stopLoading() } catch (_: Exception) {}
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong("town_cycle_started_at", 0L).apply()
+        townBuilderCycleStartedAt = 0L
+        townBuilderInProgress = false
+        builderInProgress = false
+        builderVillages.clear()
+        builderVillageIndex = 0
+        pendingBuilderResourceHref = ""
+        pendingUpgradeUrl = ""
+        pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+        heroTransferCompleted = false
+        inventoryUseAttempt = 0
+        builderStage = "IDLE"
+        startHoldCelebrationCycle()
+    }
+
+    private val celebrationTimeoutRunnable = Runnable {
+        if (!running || !holdCelebrationInProgress || holdCelebrationCycleStartedAt <= 0L) return@Runnable
+        logEvent("Celebration over 4 min, process stop")
+        try { automationWebView()?.stopLoading() } catch (_: Exception) {}
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong("hold_celebration_cycle_started_at", 0L).apply()
+        holdCelebrationCycleStartedAt = 0L
+        finishHoldCelebrationCycle()
+    }
     private var recoveringService = false
     private var webViewRecoveryInProgress = false
     private var lastAutomationUrl = ""
@@ -1781,6 +1831,8 @@ class FarmAutomationService : Service() {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putLong("resource_cycle_started_at", now)
             .apply()
+        handler.removeCallbacks(resourceBuilderTimeoutRunnable)
+        handler.postDelayed(resourceBuilderTimeoutRunnable, moduleMaxDurationMs)
         val hasVillageData = loadBuilderStateFromVillageData()
         if (!hasVillageData) {
             logEvent("Resource Builder: tidak ada village yang dicentang; siklus selesai")
@@ -2333,6 +2385,8 @@ private fun clickTransferSelected() {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putLong("town_cycle_started_at", townBuilderCycleStartedAt)
             .apply()
+        handler.removeCallbacks(townBuilderTimeoutRunnable)
+        handler.postDelayed(townBuilderTimeoutRunnable, moduleMaxDurationMs)
 
         logEvent("Town Builder: START — ${builderVillages.size} village Link Town aktif")
         logEvent("Town Builder: target = ${builderVillages.joinToString(" | ") { "${it.second} [${it.first}]" }}")
@@ -2410,6 +2464,7 @@ private fun clickTransferSelected() {
 
     private fun finishTownBuilderCycle() {
         debugTrace("ENTER finishTownBuilderCycle")
+        handler.removeCallbacks(townBuilderTimeoutRunnable)
         val now = System.currentTimeMillis()
         if (townBuilderCycleStartedAt > 0L) {
             val duration = (now - townBuilderCycleStartedAt).coerceAtLeast(0L)
@@ -2461,6 +2516,8 @@ private fun clickTransferSelected() {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putLong("hold_celebration_cycle_started_at", holdCelebrationCycleStartedAt)
             .apply()
+        handler.removeCallbacks(celebrationTimeoutRunnable)
+        handler.postDelayed(celebrationTimeoutRunnable, moduleMaxDurationMs)
         holdCelebrationIndex = 0
         holdCelebrationTransferPending = false
         holdCelebrationInspectAttempt = 0
@@ -2583,6 +2640,7 @@ private fun clickTransferSelected() {
                         automationWebView()?.evaluateJavascript("""(() => { const els=[...document.querySelectorAll('button,input[type=button],input[type=submit],[role="button"],a')]; const n=s=>String(s||'').replace(/\\s+/g,' ').trim(); const h=els.find(e=>{const x=getComputedStyle(e),r=e.getBoundingClientRect();return x.display!=='none'&&x.visibility!=='hidden'&&r.width>0&&r.height>0&&!e.disabled&&/^hold$/i.test(n(e.innerText||e.textContent||e.value||e.title||e.getAttribute('aria-label')))}); if(!h)return JSON.stringify({state:'hold_missing'}); h.scrollIntoView({block:'center',inline:'center'}); try{h.click();}catch(e){try{['mousedown','mouseup','click'].forEach(t=>h.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})))}catch(_){} } return JSON.stringify({state:'hold_clicked',html:(h.outerHTML||'').slice(0,1200)}); })();""".trimIndent()) { holdRaw ->
                             val holdResult = holdRaw.orEmpty().trim('"').replace("\\\"", "\"")
                             if (holdResult.contains("hold_clicked")) {
+                                logEvent("Celebration ($name) Success")
                                 handler.postDelayed({
                                     holdCelebrationIndex++
                                     processHoldCelebrationVillage()
@@ -2623,11 +2681,16 @@ private fun clickTransferSelected() {
                         }
                     }
                     else -> {
-                        if (attempt < 15) {
-                            handler.postDelayed({ processHoldCelebrationPage() }, 1000L)
-                        } else {
-                            handler.postDelayed({ processHoldCelebrationPage() }, 3000L)
-                        }
+                        // Tidak ada Hold dan tidak ada Exchange Resources: village ini
+                        // tidak membutuhkan aksi Celebration. Langsung lanjut village berikutnya.
+                        holdCelebrationTransferPending = false
+                        holdCelebrationInspectAttempt = 0
+                        holdCelebrationTransferAttempt = 0
+                        handler.postDelayed({
+                            if (!running || !holdCelebrationInProgress) return@postDelayed
+                            holdCelebrationIndex++
+                            processHoldCelebrationVillage()
+                        }, 500L)
                     }
                 }
             }
@@ -2806,6 +2869,7 @@ private fun clickTransferSelected() {
     }
 
     private fun finishHoldCelebrationCycle() {
+        handler.removeCallbacks(celebrationTimeoutRunnable)
         val now = System.currentTimeMillis()
         if (holdCelebrationCycleStartedAt > 0L) {
             val duration = (now - holdCelebrationCycleStartedAt).coerceAtLeast(0L)
@@ -3100,6 +3164,7 @@ private fun clickTransferSelected() {
 
     private fun finishResourceBuilderCycle() {
         debugTrace("ENTER finishResourceBuilderCycle")
+        handler.removeCallbacks(resourceBuilderTimeoutRunnable)
         val now = System.currentTimeMillis()
         if (resourceBuilderCycleStartedAt > 0L) {
             val duration = (now - resourceBuilderCycleStartedAt).coerceAtLeast(0L)
@@ -3649,6 +3714,19 @@ private fun clickTransferSelected() {
                 openFileOutput(logFileName, MODE_APPEND).bufferedWriter().use {
                     it.appendLine(line)
                 }
+            } catch (_: Exception) {}
+            return
+        }
+
+        // Log ringkas khusus timeout modul dan Celebration success harus selalu disimpan.
+        if (message == "Res Builder over 4 min, process stop" ||
+            message == "Town Builder over 4 min, process stop" ||
+            message == "Celebration over 4 min, process stop" ||
+            (message.startsWith("Celebration (") && message.endsWith(") Success"))) {
+            val cycleTagged = if (cycleNumber > 0) "[CYCLE $cycleNumber] $message" else message
+            val line = "${logTimeFormat.format(Date())} | $cycleTagged"
+            try {
+                openFileOutput(logFileName, MODE_APPEND).bufferedWriter().use { it.appendLine(line) }
             } catch (_: Exception) {}
             return
         }
