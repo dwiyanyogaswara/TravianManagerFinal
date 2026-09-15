@@ -257,6 +257,8 @@ class FarmAutomationService : Service() {
     private var heroTransferCompleted = false
     private var inventoryUseAttempt = 0
     private var cycleNumber = 0
+    // Guard scheduler: satu waktu Next Run hanya boleh menghasilkan satu cycle.
+    private var cycleStartInProgress = false
     private var farmListCycleStartedAt = 0L
     private var resourceBuilderCycleStartedAt = 0L
     private var townBuilderCycleStartedAt = 0L
@@ -782,21 +784,32 @@ class FarmAutomationService : Service() {
         debugTrace("ENTER triggerScheduledCycle")
         if (!running) return
 
-        // Jangan membuat cycle baru berulang-ulang ketika refresh masih berjalan.
-        // Versi lama menaikkan cycleNumber setiap retry 1 detik sehingga scheduler
-        // dapat tertahan lama dan callback Next Run menjadi tidak konsisten.
+        // Semua callback scheduler berjalan di MainLooper. Begitu satu cycle
+        // sudah aktif, callback lain (Next Run, heartbeat, retry refresh, dsb.)
+        // HARUS langsung diabaikan. Ini mencegah CYCLE 2..36 START pada timestamp
+        // yang sama.
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (cycleStartInProgress || prefs.getBoolean("cycle_active", false)) {
+            return
+        }
+
+        // Jangan membuat banyak retry callback ketika AUTO REFRESH VILLAGE belum
+        // selesai. Cukup satu retry yang menunggu sampai refresh benar-benar tutup.
         if (!villageRefreshClosed || villageRefreshInProgress || !villageRefreshCompleted) {
             if (!cycleWaitingForRefreshRetry) {
                 cycleWaitingForRefreshRetry = true
                 logEvent("Siklus menunggu AUTO REFRESH VILLAGE selesai")
+                handler.postDelayed({
+                    cycleWaitingForRefreshRetry = false
+                    if (running) triggerScheduledCycle()
+                }, 1_000L)
             }
-            handler.postDelayed({
-                cycleWaitingForRefreshRetry = false
-                if (running) triggerScheduledCycle()
-            }, 1_000L)
             return
         }
 
+        // Lock dipasang SEBELUM cycleNumber dinaikkan dan sebelum callback lain
+        // mendapat kesempatan masuk.
+        cycleStartInProgress = true
         countdownCyclePending = false
         scheduledRefreshForNextRun = false
         val now = timeFormat.format(Date())
@@ -815,6 +828,8 @@ class FarmAutomationService : Service() {
             .putLong("farm_cycle_started_at", farmListCycleStartedAt)
             .putLong("resource_cycle_started_at", 0L)
             .apply()
+        cycleStartInProgress = false
+        cycleWaitingForRefreshRetry = false
         logEvent("CICLE START")
         handler.removeCallbacks(cycleWatchdogRunnable)
         handler.postDelayed(cycleWatchdogRunnable, 15 * 60_000L)
@@ -2320,10 +2335,13 @@ private fun clickTransferSelected() {
             val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
 
             if (result.contains("\"stillThere\":false")) {
-                logEvent(if (townBuilderInProgress) "Town Builder: Transfer Selected selesai — lanjut Upgrade" else "Resource Builder: Transfer Selected terkonfirmasi selesai — langsung Upgrade")
+                logEvent(if (townBuilderInProgress) "Town Builder: Transfer Selected selesai — tunggu 2 detik lalu cek Upgrade lagi" else "Resource Builder: Transfer Selected selesai — tunggu 2 detik lalu cek Upgrade lagi")
                 heroTransferCompleted = true
                 pendingUpgradeCosts = longArrayOf(0L,0L,0L,0L)
-                handler.postDelayed({ clickResourceUpgrade() }, 700L)
+                // Sesuai alur: setelah Transfer Selected, beri Travian waktu
+                // refresh resource selama 2 detik, lalu CEK ULANG apakah Upgrade
+                // sudah tersedia. Jika masih belum tersedia, village di-skip.
+                handler.postDelayed({ recheckUpgradeAfterTransfer() }, 2_000L)
             } else if (inventoryUseAttempt < 18) {
                 inventoryUseAttempt++
                 debugTrace("HERO TRANSFER: Transfer Selected masih ada; menunggu proses (${inventoryUseAttempt}/18)")
@@ -2337,12 +2355,40 @@ private fun clickTransferSelected() {
         }
     }
 
+    private fun recheckUpgradeAfterTransfer() {
+        if (!running || !builderInProgress) return
+        val currentUrl = automationWebView()?.url.orEmpty()
+        if (!currentUrl.contains("build.php", ignoreCase = true) || currentUrl.contains("gid=16", ignoreCase = true)) {
+            logEvent(if (townBuilderInProgress) "Town Builder: setelah transfer halaman bukan target build — village dilewati" else "Resource Builder: setelah transfer halaman bukan target resource — village dilewati")
+            goToNextBuilderVillage()
+            return
+        }
+        logEvent(if (townBuilderInProgress) "Town Builder: cek ulang Upgrade setelah transfer" else "Resource Builder: cek ulang Upgrade setelah transfer")
+        val js = """
+            (() => {
+                const text = String(document.body?.innerText || document.documentElement?.innerText || '')
+                    .replace(/\s+/g, ' ').trim();
+                return /upgrade\s+to\s+level/i.test(text) ? 'upgrade_available' : 'not_available';
+            })();
+        """.trimIndent()
+        automationWebView()?.evaluateJavascript(js) { raw ->
+            if (raw.orEmpty().contains("upgrade_available")) {
+                logEvent(if (townBuilderInProgress) "Town Builder: Upgrade tersedia setelah transfer — klik Upgrade" else "Resource Builder: Upgrade tersedia setelah transfer — klik Upgrade")
+                clickResourceUpgrade()
+            } else {
+                val name = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village"
+                logEvent(if (townBuilderInProgress) "Town Builder: $name masih belum bisa upgrade setelah transfer — SKIP village" else "Resource Builder: $name masih belum bisa upgrade setelah transfer — SKIP village")
+                goToNextBuilderVillage()
+            }
+        }
+    }
+
     private fun startTownBuilderCycle() {
         debugTrace("ENTER startTownBuilderCycle")
         if (!running || !townBuilderEnabled || townBuilderInProgress) return
 
-        // Town Builder TIDAK mengikuti checklist Resource Builder.
-        // Ia memproses SEMUA record database yang Link Town-nya bukan "-".
+        // Town Builder mengikuti checklist yang sama: hanya record
+        // IsChecklist=true yang diproses, lalu memakai Link Town dari DB.
         val records = loadVillageDataRecordsFromPrefs()
         persistRebasedVillageData(records)
         builderVillages.clear()
@@ -2359,7 +2405,7 @@ private fun clickTransferSelected() {
         }
 
         builderVillages = records
-            .filter { it.linkTown.trim().isNotBlank() && it.linkTown.trim() != "-" }
+            .filter { it.isChecklist && it.linkTown.trim().isNotBlank() && it.linkTown.trim() != "-" }
             .map { it.id to it.namaVillage }
             .distinctBy { it.first }
             .toMutableList()
