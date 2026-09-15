@@ -2589,7 +2589,7 @@ private fun clickTransferSelected() {
                         ...document.querySelectorAll('button.exchange'),
                         ...document.querySelectorAll('button')
                     ].filter((el, i, arr) => arr.indexOf(el) === i && /exchange\s+resources/i.test(textOf(el) || el.getAttribute('value') || el.getAttribute('title') || ''));
-                    const transferCandidates = [...document.querySelectorAll('.inlineIcon.resource.transfer')].filter(visible);
+                    const transferCandidates = [...document.querySelectorAll('.inlineIcon.resource.transfer.fillUp')].filter(visible);
                     const bodyText = String(document.body?.innerText || '').replace(/\\s+/g,' ').trim();
                     const lower = bodyText.toLowerCase();
                     return JSON.stringify({
@@ -2666,7 +2666,7 @@ private fun clickTransferSelected() {
                         holdCelebrationTransferAttempt = 0
                         val clickJs = """
                             (() => {
-                                const t=document.querySelector('.inlineIcon.resource.transfer');
+                                const t=document.querySelector('.inlineIcon.resource.transfer.fillUp');
                                 if(!t)return JSON.stringify({state:'transfer_hero_missing'});
                                 const before=t.getAttribute('onclick')||'';
                                 t.scrollIntoView({block:'center',inline:'center'});
