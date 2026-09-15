@@ -23,6 +23,7 @@ import javax.crypto.spec.GCMParameterSpec
 import java.security.KeyStore
 import android.widget.*
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.text.SpannableString
 import android.text.Spanned
 import android.view.View
@@ -65,6 +66,7 @@ class MainActivity : Activity() {
     private lateinit var farmCycleTime: TextView
     private lateinit var resourceCycleTime: TextView
     private lateinit var townCycleTime: TextView
+    private lateinit var holdCelebrationCycleTime: TextView
     private lateinit var serverInput: EditText
     private lateinit var usernameInput: EditText
     private lateinit var passwordInput: EditText
@@ -374,6 +376,7 @@ class MainActivity : Activity() {
         farmCycleTime = findViewById(R.id.farmCycleTime)
         resourceCycleTime = findViewById(R.id.resourceCycleTime)
         townCycleTime = findViewById(R.id.townCycleTime)
+        holdCelebrationCycleTime = findViewById(R.id.holdCelebrationCycleTime)
         webView = findViewById(R.id.webView)
         pruneLogs()
         handler.postDelayed(logCleanup, 60 * 60 * 1000L)
@@ -766,6 +769,8 @@ class MainActivity : Activity() {
             .remove("resource_builder_targets_json")
             .remove("resource_builder_villages_json")
             .remove("resource_builder_selected_villages")
+            .remove("resource_builder_selection_configured")
+            .remove("resource_snapshots_json")
             .apply()
         loadedVillages.clear()
         if (::villageChecklist.isInitialized) villageChecklist.removeAllViews()
@@ -982,15 +987,12 @@ class MainActivity : Activity() {
             isChecked = if (configured) loadedVillages.keys.all { saved.contains(it) } else true
             setOnCheckedChangeListener { _, checked ->
                 for (i in 1 until villageChecklist.childCount) {
-                    val row = villageChecklist.getChildAt(i) as? LinearLayout ?: continue
-                    for (j in 0 until row.childCount) {
-                        val card = row.getChildAt(j) as? LinearLayout ?: continue
-                        val id = card.tag?.toString().orEmpty()
-                        val box = card.findViewWithTag<CheckBox>("resource:$id")
-                        if (box != null) {
-                            box.isChecked = checked
-                            updateVillageChecklistData(id, checked)
-                        }
+                    val card = villageChecklist.getChildAt(i) as? LinearLayout ?: continue
+                    val id = card.tag?.toString().orEmpty()
+                    val box = card.findViewWithTag<CheckBox>("resource:$id")
+                    if (box != null) {
+                        box.isChecked = checked
+                        updateVillageChecklistData(id, checked)
                     }
                 }
                 getSharedPreferences("config", MODE_PRIVATE).edit()
@@ -1017,18 +1019,7 @@ class MainActivity : Activity() {
             "$townServer/build.php?id=40&gid=31" to "City Wall"
         )
 
-        var gridRow: LinearLayout? = null
-        loadedVillages.entries.toList().forEachIndexed { index, (id, name) ->
-            if (index % 2 == 0) {
-                gridRow = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
-                }
-                villageChecklist.addView(gridRow)
-            }
+        loadedVillages.entries.toList().forEach { (id, name) ->
 
             val record = villageRecords[id]
             val currentMinLevel = record?.minLvl ?: -1
@@ -1044,10 +1035,18 @@ class MainActivity : Activity() {
 
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(6, 4, 6, 6)
+                setPadding(8, 6, 8, 8)
                 tag = id
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    setMargins(3, 3, 3, 3)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(3, 4, 3, 4)
+                }
+                background = GradientDrawable().apply {
+                    setColor(Color.TRANSPARENT)
+                    setStroke(2, Color.GRAY)
+                    cornerRadius = 8f
                 }
             }
 
@@ -1136,7 +1135,7 @@ class MainActivity : Activity() {
             townAndHold.addView(hold)
             card.addView(box)
             card.addView(townAndHold)
-            gridRow?.addView(card)
+            villageChecklist.addView(card)
         }
 
         logEvent("UI: ${loadedVillages.size} village dimuat: ${loadedVillages.values.joinToString(" | ")}")
@@ -1185,6 +1184,12 @@ class MainActivity : Activity() {
 
                             const clickable = node?.closest?.('a,button,[role="button"],input,select,summary') || node;
                             if (!clickable) return;
+
+                            const isTravianLogout = clickable.id === 'button6aa8a989ac75e' ||
+                                (clickable.matches?.('a.logout') && /auth\/logout/i.test(clickable.getAttribute('onclick') || ''));
+                            if (isTravianLogout) {
+                                try { AndroidFarm.onTravianLogoutClick(); } catch (_) {}
+                            }
 
                             const entry = clickable.closest?.('.listEntry, .dropContainer, li');
                             const anchor = clickable.matches?.('a[href]')
@@ -2697,6 +2702,21 @@ class MainActivity : Activity() {
         }
 
         @JavascriptInterface
+        fun onHoldCelebrationClick(villageName: String) {
+            debugTrace("ENTER onHoldCelebrationClick")
+            runOnUiThread { logEvent("Nama Village $villageName Hold Celebration Success") }
+        }
+
+        @JavascriptInterface
+        fun onTravianLogoutClick() {
+            debugTrace("ENTER onTravianLogoutClick")
+            runOnUiThread {
+                clearVillageDatabaseOnLogout("Travian logout DOM")
+                logEvent("LOGOUT DOM diklik — database village dihapus")
+            }
+        }
+
+        @JavascriptInterface
         fun onLiveClickResult(result: String) {
             debugTrace("ENTER onLiveClickResult")
             runOnUiThread { handleLiveClickResult(result) }
@@ -3220,12 +3240,15 @@ class MainActivity : Activity() {
         val farmStart = prefs.getLong("farm_cycle_started_at", 0L)
         val resourceStart = prefs.getLong("resource_cycle_started_at", 0L)
         val townStart = prefs.getLong("town_cycle_started_at", 0L)
+        val holdStart = prefs.getLong("hold_celebration_cycle_started_at", 0L)
         val farmDuration = if (farmStart > 0L) now - farmStart else prefs.getLong("farm_cycle_duration_ms", 0L)
         val resourceDuration = if (resourceStart > 0L) now - resourceStart else prefs.getLong("resource_cycle_duration_ms", 0L)
         val townDuration = if (townStart > 0L) now - townStart else prefs.getLong("town_cycle_duration_ms", 0L)
+        val holdDuration = if (holdStart > 0L) now - holdStart else prefs.getLong("hold_celebration_cycle_duration_ms", 0L)
         farmCycleTime.text = "Waktu Siklus Farm List: ${formatDuration(farmDuration)}"
         resourceCycleTime.text = "Waktu Siklus Resource Builder: ${formatDuration(resourceDuration)}"
         townCycleTime.text = "Waktu Siklus Town Builder: ${formatDuration(townDuration)}"
+        holdCelebrationCycleTime.text = "Waktu Siklus Hold Celebration: ${formatDuration(holdDuration)}"
     }
 
     private fun updateCountdown() {

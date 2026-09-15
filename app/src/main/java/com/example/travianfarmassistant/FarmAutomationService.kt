@@ -260,6 +260,7 @@ class FarmAutomationService : Service() {
     private var farmListCycleStartedAt = 0L
     private var resourceBuilderCycleStartedAt = 0L
     private var townBuilderCycleStartedAt = 0L
+    private var holdCelebrationCycleStartedAt = 0L
     private var recoveringService = false
     private var webViewRecoveryInProgress = false
     private var lastAutomationUrl = ""
@@ -533,6 +534,7 @@ class FarmAutomationService : Service() {
         farmListCycleStartedAt = prefs.getLong("farm_cycle_started_at", 0L)
         resourceBuilderCycleStartedAt = prefs.getLong("resource_cycle_started_at", 0L)
         townBuilderCycleStartedAt = prefs.getLong("town_cycle_started_at", 0L)
+        holdCelebrationCycleStartedAt = prefs.getLong("hold_celebration_cycle_started_at", 0L)
 
         if (username.isBlank() || password.isBlank()) {
             logEvent("RECOVERY: credential database kosong/tidak valid; recovery dibatalkan")
@@ -2447,6 +2449,10 @@ private fun clickTransferSelected() {
         }
 
         holdCelebrationInProgress = true
+        holdCelebrationCycleStartedAt = System.currentTimeMillis()
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putLong("hold_celebration_cycle_started_at", holdCelebrationCycleStartedAt)
+            .apply()
         holdCelebrationIndex = 0
         logEvent("Hold Celebration: START — ${holdCelebrationVillages.size} village")
         updateNotification("Hold Celebration — ${holdCelebrationVillages.size} village")
@@ -2503,6 +2509,9 @@ private fun clickTransferSelected() {
 
                     if (!btn) return JSON.stringify({state:'not_found'});
                     btn.scrollIntoView({block:'center', inline:'center'});
+                    // Klik Hold memicu navigasi Travian, sehingga callback evaluateJavascript
+                    // kadang tidak sempat kembali ke Android. Kirim log native sebelum klik.
+                    try { AndroidFarm.onHoldCelebrationClick(${JSONObject.quote("$name")}); } catch (_) {}
                     try { btn.click(); } catch (_) {
                         ['mousedown','mouseup','click'].forEach(type => {
                             try { btn.dispatchEvent(new MouseEvent(type, {
@@ -2515,9 +2524,7 @@ private fun clickTransferSelected() {
             """.trimIndent()
             automationWebView()?.evaluateJavascript(js) { raw ->
                 val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
-                if (result.contains("\"state\":\"clicked\"")) {
-                    logEvent("Nama Village $name Hold Celebration Success")
-                } else {
+                if (!result.contains("\"state\":\"clicked\"")) {
                     logEvent("Nama Village $name Hold Celebration: tombol Hold tidak ditemukan")
                 }
                 holdCelebrationIndex++
@@ -2528,6 +2535,16 @@ private fun clickTransferSelected() {
 
     private fun finishHoldCelebrationCycle() {
         debugTrace("ENTER finishHoldCelebrationCycle")
+        val now = System.currentTimeMillis()
+        if (holdCelebrationCycleStartedAt > 0L) {
+            val duration = (now - holdCelebrationCycleStartedAt).coerceAtLeast(0L)
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putLong("hold_celebration_cycle_duration_ms", duration)
+                .putLong("hold_celebration_cycle_started_at", 0L)
+                .apply()
+            logEvent("Hold Celebration: waktu proses ${formatDuration(duration)}")
+            holdCelebrationCycleStartedAt = 0L
+        }
         holdCelebrationInProgress = false
         holdCelebrationVillages.clear()
         holdCelebrationIndex = 0
@@ -3133,6 +3150,11 @@ private fun clickTransferSelected() {
             edit.putLong("town_cycle_started_at", 0L)
             townBuilderCycleStartedAt = 0L
         }
+        if (holdCelebrationCycleStartedAt > 0L) {
+            edit.putLong("hold_celebration_cycle_duration_ms", (now - holdCelebrationCycleStartedAt).coerceAtLeast(0L))
+            edit.putLong("hold_celebration_cycle_started_at", 0L)
+            holdCelebrationCycleStartedAt = 0L
+        }
         edit.apply()
     }
 
@@ -3458,6 +3480,16 @@ private fun clickTransferSelected() {
                             logEvent("Form login Travian tidak dikenali")
                         }
                     }
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun onHoldCelebrationClick(villageName: String) {
+            debugTrace("ENTER onHoldCelebrationClick")
+            handler.post {
+                if (running && holdCelebrationInProgress) {
+                    logEvent("Nama Village $villageName Hold Celebration Success")
                 }
             }
         }
