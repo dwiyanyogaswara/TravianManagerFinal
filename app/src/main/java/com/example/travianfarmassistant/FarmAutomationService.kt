@@ -416,7 +416,7 @@ class FarmAutomationService : Service() {
                     // biarkan sampai selesai/timeout. Setelah selesai, closeAutomaticVillageRefresh()
                     // akan memanggil triggerScheduledCycle().
                     forceStartCycleAtCountdownZero()
-                    return@Runnable
+                    return
 
                 }
             } finally {
