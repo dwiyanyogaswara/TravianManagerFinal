@@ -2714,135 +2714,175 @@ private fun clickTransferSelected() {
         celebrationDebug("village=$name attempt=$attempt")
         celebrationDebug("WEBVIEW URL=${automationWebView()?.url.orEmpty()}")
 
+        // Samakan persis pola pencarian tombol dengan Resource Builder / Town Builder.
+        // Hanya cari elemen kontrol yang visible dan benar-benar clickable; jangan scan
+        // seluruh DOM karena parent/wrapper React Travian juga dapat mengandung teks
+        // "Transfer selected" dan menghasilkan target yang salah.
+        val js = """
+            (() => {
+                const visible = el => {
+                    if (!el) return false;
+                    const s = getComputedStyle(el), r = el.getBoundingClientRect();
+                    return s.display !== 'none' && s.visibility !== 'hidden' &&
+                           s.opacity !== '0' && r.width > 0 && r.height > 0;
+                };
+                const norm = s => String(s || '').replace(/\s+/g,' ').trim().toLowerCase();
+
+                const selectors = [
+                    'button',
+                    'input[type=button]',
+                    'input[type=submit]',
+                    '[role="button"]',
+                    'a'
+                ];
+
+                let controls = [];
+                for (const sel of selectors) {
+                    try {
+                        controls.push(...document.querySelectorAll(sel));
+                    } catch (_) {}
+                }
+
+                controls = controls.filter(el =>
+                    visible(el) &&
+                    !el.disabled &&
+                    el.getAttribute('aria-disabled') !== 'true'
+                );
+
+                const textOf = el => norm(
+                    el.innerText || el.textContent || el.value ||
+                    el.title || el.getAttribute('aria-label') || ''
+                );
+
+                let btn = controls.find(el => {
+                    const t = textOf(el);
+                    return /transfer\s+selected/i.test(t);
+                });
+
+                if (!btn) {
+                    btn = controls.find(el => {
+                        const t = textOf(el);
+                        if (!/transfer/i.test(t) || !/selected/i.test(t)) return false;
+
+                        const childMatch = [...el.querySelectorAll('button,a,[role="button"],input')]
+                            .some(c => c !== el && visible(c) &&
+                                /transfer/i.test(textOf(c)) && /selected/i.test(textOf(c)));
+                        return !childMatch;
+                    });
+                }
+
+                if (!btn) {
+                    const dialog = document.querySelector('#reactDialogWrapper,[class*="reactDialog"]');
+                    const dialogText = dialog ? norm(dialog.innerText || dialog.textContent || '') : '';
+                    return JSON.stringify({
+                        state:'not_found',
+                        dialogVisible: !!dialog && visible(dialog),
+                        dialogHasTransfer: /transfer/i.test(dialogText),
+                        dialogText: dialogText.slice(0,500)
+                    });
+                }
+
+                const beforeText = textOf(btn);
+                const tag = btn.tagName;
+                const cls = String(btn.className || '');
+                btn.scrollIntoView({block:'center', inline:'center'});
+
+                try { btn.click(); } catch (_) {
+                    ['mousedown','mouseup','click'].forEach(type => {
+                        try {
+                            btn.dispatchEvent(new MouseEvent(type, {
+                                bubbles:true, cancelable:true, view:window
+                            }));
+                        } catch (_) {}
+                    });
+                }
+
+                return JSON.stringify({
+                    state:'clicked',
+                    tag,
+                    text:beforeText.slice(0,200),
+                    className:cls.slice(0,200)
+                });
+            })();
+        """.trimIndent()
+
+        automationWebView()?.evaluateJavascript(js) { raw ->
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            celebrationDebug("TRANSFER SELECTED RESULT=$result")
+
+            if (result.contains("\"state\":\"clicked\"")) {
+                celebrationDebug("TRANSFER SELECTED CLICK SUCCESS — tunggu popup memproses transfer")
+                handler.postDelayed({
+                    verifyCelebrationTransferSelectedCompleted(name)
+                }, 1200L)
+            } else if (attempt < 15) {
+                celebrationDebug("TRANSFER SELECTED belum ditemukan, retry $attempt/15")
+                handler.postDelayed({ clickCelebrationTransferSelected(name) }, 500L)
+            } else {
+                celebrationDebug("TRANSFER SELECTED tidak ditemukan setelah 15 percobaan; ulang setelah 3000ms")
+                holdCelebrationTransferAttempt = 0
+                handler.postDelayed({ clickCelebrationTransferSelected(name) }, 3000L)
+            }
+        }
+    }
+
+    private fun verifyCelebrationTransferSelectedCompleted(name: String) {
+        if (!running || !holdCelebrationInProgress || !holdCelebrationTransferPending) return
+
         val js = """
             (() => {
                 const visible = el => {
                     if (!el) return false;
                     const s=getComputedStyle(el), r=el.getBoundingClientRect();
-                    return s.display!=='none' && s.visibility!=='hidden' && s.opacity!=='0' && r.width>0 && r.height>0;
+                    return s.display!=='none' && s.visibility!=='hidden' &&
+                           s.opacity!=='0' && r.width>0 && r.height>0;
                 };
-                const n = s => String(s||'').replace(/[\\u200b-\\u200f\\u202a-\\u202e\\ufeff\\s]+/g,' ').trim();
-                const text=e => n(e?.innerText || e?.textContent || e?.value || e?.title || e?.getAttribute('aria-label') || '');
-                const isTransferSelected = e => {
-                    const value=n(e?.getAttribute?.('value') || '');
-                    const title=n(e?.getAttribute?.('title') || '');
-                    const aria=n(e?.getAttribute?.('aria-label') || '');
-                    const txt=text(e);
-                    return /^transfer\\s+selected$/i.test(txt) ||
-                           /^transfer\\s+selected$/i.test(value) ||
-                           /^transfer\\s+selected$/i.test(title) ||
-                           /^transfer\\s+selected$/i.test(aria);
-                };
+                const norm = s => String(s||'').replace(/\s+/g,' ').trim().toLowerCase();
 
-                // Jangan hanya mencari button yang visible.
-                // DOM popup Travian bisa mempunyai text "Transfer selected"
-                // pada child element / wrapper sehingga selector lama tidak menemukannya.
-                const all=[...document.querySelectorAll('*')];
-                const matches=all.filter(isTransferSelected);
+                const controls = [
+                    ...document.querySelectorAll('button'),
+                    ...document.querySelectorAll('input[type=button],input[type=submit]'),
+                    ...document.querySelectorAll('[role="button"]'),
+                    ...document.querySelectorAll('a')
+                ].filter(visible);
 
-                // Cari elemen clickable terdekat dari elemen yang memiliki text.
-                let target=null;
-                let source=null;
-                for(const m of matches){
-                    const clickable=m.closest('button,[role="button"],input[type="button"],input[type="submit"],a');
-                    if(clickable && visible(clickable) && !clickable.disabled){
-                        target=clickable;
-                        source=m;
-                        break;
-                    }
-                }
+                const stillThere = controls.some(el => {
+                    const t=norm(el.innerText||el.textContent||el.value||el.title||el.getAttribute('aria-label')||'');
+                    return /transfer\s+selected/i.test(t);
+                });
 
-                // Fallback: cari langsung element clickable tanpa syarat visible terlebih dahulu.
-                if(!target){
-                    const clickable=[...document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"],a')];
-                    target=clickable.find(isTransferSelected) || null;
-                    source=target;
-                }
-
-                const body=n(document.body?.innerText||'');
-                const matchInfo=matches.slice(0,20).map(e => ({
-                    tag:e.tagName,
-                    id:e.id||'',
-                    cls:String(e.className||''),
-                    text:text(e),
-                    value:e.getAttribute('value')||'',
-                    title:e.getAttribute('title')||'',
-                    role:e.getAttribute('role')||'',
-                    html:(e.outerHTML||'').slice(0,1800)
-                }));
-
-                if(!target){
-                    return JSON.stringify({
-                        state:'not_found',
-                        url:location.href,
-                        readyState:document.readyState,
-                        bodyHasTransferSelected:/transfer\\s+selected/i.test(body),
-                        bodyExcerpt:body.slice(0,3500),
-                        exactMatchCount:matches.length,
-                        matches:matchInfo
-                    });
-                }
-
-                const html=(target.outerHTML||'').slice(0,2500);
-                const targetInfo={
-                    tag:target.tagName,
-                    id:target.id||'',
-                    cls:String(target.className||''),
-                    text:text(target),
-                    value:target.getAttribute('value')||'',
-                    title:target.getAttribute('title')||'',
-                    html:html,
-                    sourceTag:source?.tagName||''
-                };
-
-                target.scrollIntoView({block:'center',inline:'center'});
-                let clickMethod='element.click';
-                try {
-                    target.click();
-                } catch(e) {
-                    clickMethod='mouse-events';
-                    try {
-                        ['mousedown','mouseup','click'].forEach(t =>
-                            target.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window}))
-                        );
-                    } catch(_) {}
-                }
+                const dialog = document.querySelector('#reactDialogWrapper,[class*="reactDialog"]');
+                const dialogVisible = !!dialog && visible(dialog);
 
                 return JSON.stringify({
-                    state:'clicked',
-                    url:location.href,
-                    clickMethod:clickMethod,
-                    target:targetInfo
+                    stillThere,
+                    dialogVisible,
+                    dialogText: dialog ? norm(dialog.innerText||dialog.textContent||'').slice(0,300) : ''
                 });
             })();
         """.trimIndent()
 
-        celebrationDebug("ACTION: search exact DOM text/value 'Transfer Selected'")
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result=raw.orEmpty().trim('"').replace("\\\"","\"")
-            celebrationDebug("TRANSFER SELECTED RESULT=$result")
-            if(result.contains("\"state\":\"clicked\"")) {
-                celebrationDebug("TRANSFER SELECTED CLICK SUCCESS")
-                celebrationDebug("ACTION: wait 2500ms then reload Celebration")
-                handler.postDelayed({
-                    if(!running || !holdCelebrationInProgress)return@postDelayed
-                    holdCelebrationTransferPending=false
-                    holdCelebrationInspectAttempt=0
-                    holdCelebrationTransferAttempt=0
-                    val id=holdCelebrationVillages.getOrNull(holdCelebrationIndex)?.first.orEmpty()
-                    celebrationDebug("ACTION: reload Celebration after transfer id=$id")
-                    automationWebView()?.loadUrl("${server}/build.php?id=30&gid=24&newdid=$id")
-                },2500L)
-            } else {
-                celebrationDebug("BLOCKED=TRANSFER_SELECTED_NOT_FOUND attempt=$attempt")
-                if(attempt<20) {
-                    celebrationDebug("RETRY: Transfer selected in 1000ms attempt=${attempt+1}/20")
-                    handler.postDelayed({clickCelebrationTransferSelected(name)},1000L)
-                } else {
-                    celebrationDebug("FAILED: Transfer selected not found after 20 attempts; keep waiting")
-                    handler.postDelayed({clickCelebrationTransferSelected(name)},3000L)
-                }
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            celebrationDebug("TRANSFER SELECTED VERIFY=$result")
+
+            val stillThere = result.contains("\"stillThere\":true")
+            if (stillThere) {
+                celebrationDebug("TRANSFER SELECTED masih terlihat; klik ulang")
+                handler.postDelayed({ clickCelebrationTransferSelected(name) }, 500L)
+                return@evaluateJavascript
             }
+
+            celebrationDebug("TRANSFER SELECTED selesai — reload Celebration")
+            holdCelebrationTransferPending = false
+            holdCelebrationInspectAttempt = 0
+            holdCelebrationTransferAttempt = 0
+            val id = holdCelebrationVillages.getOrNull(holdCelebrationIndex)?.first.orEmpty()
+            handler.postDelayed({
+                if (!running || !holdCelebrationInProgress) return@postDelayed
+                celebrationDebug("ACTION: reload Celebration after transfer id=$id")
+                automationWebView()?.loadUrl("${server}/build.php?id=30&gid=24&newdid=$id")
+            }, 800L)
         }
     }
 
