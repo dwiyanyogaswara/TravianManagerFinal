@@ -391,7 +391,7 @@ class MainActivity : Activity() {
         restoreResourceSnapshots(prefs)
         logEvent("Aplikasi v4.14.15 dimulai")
         val savedCredential = CredentialDatabase(this).read()
-        serverInput.setText(savedCredential?.server ?: "https://ts20.x2.europe.travian.com")
+        serverInput.setText(savedCredential?.server ?: "")
         usernameInput.setText(savedCredential?.username ?: "")
         passwordInput.setText(savedCredential?.password ?: "")
         if (savedCredential == null) {
@@ -2584,7 +2584,6 @@ class MainActivity : Activity() {
         var s = value.trim()
         if (s.isBlank() && ::serverInput.isInitialized) s = serverInput.text.toString().trim()
         if (s.isBlank()) s = CredentialDatabase(this).read()?.server.orEmpty().trim()
-        if (s.isBlank()) s = "https://ts20.x2.europe.travian.com"
         if (!s.startsWith("http", true)) s = "https://$s"
         return s.trimEnd('/')
     }

@@ -3443,7 +3443,6 @@ private fun clickTransferSelected() {
         var s = value.trim()
         if (s.isBlank()) s = getSharedPreferences(PREFS, MODE_PRIVATE).getString("server", "").orEmpty().trim()
         if (s.isBlank()) s = runCatching { CredentialDatabase(this).read()?.server.orEmpty() }.getOrDefault("").trim()
-        if (s.isBlank()) s = "https://ts20.x2.europe.travian.com"
         if (!s.startsWith("http", true)) s = "https://$s"
         return s.trimEnd('/')
     }
