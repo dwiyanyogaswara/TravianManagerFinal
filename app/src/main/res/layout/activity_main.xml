@@ -218,6 +218,11 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"/>
                     <TextView
+                        android:id="@+id/holdCelebrationCycleTime"
+                        android:text="Waktu Siklus Hold Celebration: 00:00:00"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"/>
+                    <TextView
                         android:id="@+id/nextRun"
                         android:text="Next run: -- | Countdown: --:--:--"
                         android:textStyle="bold"
