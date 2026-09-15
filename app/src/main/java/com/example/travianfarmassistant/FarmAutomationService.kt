@@ -381,18 +381,18 @@ class FarmAutomationService : Service() {
 
                 if (!cycleActive && nextAt > 0L && now >= nextAt) {
                     handler.removeCallbacks(nextRunRunnable)
-                    logEvent("Scheduler heartbeat: Countdown 00:00 — memeriksa Refresh Village sebelum CICLE")
-                    triggerScheduledCycle()
+                    logEvent("Scheduler heartbeat: Countdown 00:00 — kill proses lama dan wajib CICLE START")
+                    forceStartCycleAtCountdownZero()
                 }
             } finally {
-                if (running) handler.postDelayed(this, 5_000L)
+                if (running) handler.postDelayed(this, 10_000L)
             }
         }
     }
 
     private fun armSchedulerHeartbeat() {
         handler.removeCallbacks(schedulerHeartbeatRunnable)
-        if (running) handler.postDelayed(schedulerHeartbeatRunnable, 5_000L)
+        if (running) handler.postDelayed(schedulerHeartbeatRunnable, 10_000L)
         armFourMinuteScheduler()
     }
 
@@ -409,46 +409,25 @@ class FarmAutomationService : Service() {
                 val countdownExpired = nextAt > 0L && now >= nextAt
 
                 if (!cycleActive && countdownExpired) {
-                    logEvent("Scheduler 4 Menit: Countdown 00:00 — memastikan REFRESH VILLAGE selesai sebelum CICLE")
+                    logEvent("Scheduler guard: Countdown 00:00 — kill proses lama dan wajib CICLE START")
 
                     // Jangan lagi memalsukan villageRefreshCompleted=true. Jika refresh
                     // belum sempat dijalankan, jalankan sekarang. Jika sedang berjalan,
                     // biarkan sampai selesai/timeout. Setelah selesai, closeAutomaticVillageRefresh()
                     // akan memanggil triggerScheduledCycle().
-                    val countdownStartedAt = getSharedPreferences(PREFS, MODE_PRIVATE)
-                        .getLong("countdown_started_at", 0L)
-                    val refreshDue = countdownStartedAt > 0L &&
-                        now >= countdownStartedAt + 30_000L &&
-                        scheduledRefreshForNextRun &&
-                        !villageRefreshInProgress &&
-                        !villageRefreshCompleted
-                    if (refreshDue) {
-                        handler.removeCallbacks(delayedVillageRefreshRunnable)
-                        handler.post {
-                            if (running && !villageRefreshInProgress && !villageRefreshCompleted) {
-                                delayedVillageRefreshRunnable.run()
-                            }
-                        }
-                    }
+                    forceStartCycleAtCountdownZero()
+                    return@Runnable
 
-                    handler.removeCallbacks(nextRunRunnable)
-                    if (villageRefreshCompleted && villageRefreshClosed) {
-                        nextAt = 0L
-                        updateNextRun(0L)
-                        handler.post { if (running) triggerScheduledCycle() }
-                    } else {
-                        handler.post { if (running) triggerScheduledCycle() }
-                    }
                 }
             } finally {
-                if (running) handler.postDelayed(this, 4 * 60_000L)
+                if (running) handler.postDelayed(this, 10_000L)
             }
         }
     }
 
     private fun armFourMinuteScheduler() {
         handler.removeCallbacks(fourMinuteSchedulerRunnable)
-        if (running) handler.postDelayed(fourMinuteSchedulerRunnable, 4 * 60_000L)
+        if (running) handler.postDelayed(fourMinuteSchedulerRunnable, 10_000L)
     }
     /**
      * Refresh Village dijalankan 30 detik setelah countdown dimulai.
@@ -796,6 +775,41 @@ class FarmAutomationService : Service() {
         villageRefreshInProgress = false
         villageRefreshCompleted = true
         villageRefreshClosed = true
+        triggerScheduledCycle()
+    }
+
+    /**
+     * Countdown sudah 00:00: hentikan seluruh pekerjaan/callback yang mungkin
+     * masih tertinggal, lalu paksa CICLE START. Refresh Village tidak boleh
+     * memblokir cycle baru pada titik ini.
+     */
+    private fun forceStartCycleAtCountdownZero() {
+        if (!running) return
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean("cycle_active", false) || cycleStartInProgress) return
+
+        logEvent("COUNTDOWN 00:00 — menghentikan seluruh proses lama dan MEMAKSA CICLE START")
+        handler.removeCallbacks(nextRunRunnable)
+        handler.removeCallbacks(delayedVillageRefreshRunnable)
+        handler.removeCallbacks(cycleWatchdogRunnable)
+        handler.removeCallbacks(resourceBuilderTimeoutRunnable)
+        handler.removeCallbacks(townBuilderTimeoutRunnable)
+        handler.removeCallbacks(celebrationTimeoutRunnable)
+
+        try { automationWebView()?.stopLoading() } catch (_: Exception) {}
+        pendingStartAll = false
+        builderInProgress = false
+        loginInProgress = false
+        reloginRequested = false
+        villageRefreshInProgress = false
+        villageRefreshCompleted = true
+        villageRefreshClosed = true
+        villageRefreshInspectInFlight = false
+        scheduledRefreshForNextRun = false
+        countdownCyclePending = false
+        nextAt = 0L
+        updateNextRun(0L)
+
         triggerScheduledCycle()
     }
 
@@ -2951,8 +2965,16 @@ private fun clickTransferSelected() {
         holdCelebrationInspectAttempt = 0
         holdCelebrationTransferAttempt = 0
         logEvent("CICLE END")
+        // Refresh Village WAJIB langsung dijalankan setelah CICLE END.
         scheduleNextRandomRun()
-        updateNotification("Next Run ${timeFormat.format(Date(nextAt))} | dalam ${formatDuration((nextAt - System.currentTimeMillis()).coerceAtLeast(0L))}")
+        handler.removeCallbacks(delayedVillageRefreshRunnable)
+        handler.post {
+            if (running && !villageRefreshInProgress && !villageRefreshCompleted) {
+                logEvent("AUTO REFRESH VILLAGE: dimulai langsung setelah CICLE END")
+                startAutomaticVillageRefresh()
+            }
+        }
+        updateNotification("Refresh Village setelah CICLE END | Next Run ${timeFormat.format(Date(nextAt))}")
     }
 
     private fun clickTownUpgrade() {
@@ -3598,8 +3620,8 @@ private fun clickTransferSelected() {
             handler.postDelayed(nextRunRunnable, remaining)
             return@Runnable
         }
-        logEvent("Countdown berakhir — memulai siklus")
-        triggerScheduledCycle()
+        logEvent("Countdown berakhir — kill semua proses yang tersisa dan wajib CICLE START")
+        forceStartCycleAtCountdownZero()
     }
 
     private fun updateNextRun(delayMs: Long) {
