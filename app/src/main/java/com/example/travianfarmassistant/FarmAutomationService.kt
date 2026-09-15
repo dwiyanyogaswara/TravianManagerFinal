@@ -2432,19 +2432,42 @@ private fun clickTransferSelected() {
         startHoldCelebrationCycle()
     }
 
+    private var holdCelebrationDebugAttempt = 0
+
+    private fun celebrationDebug(message: String) {
+        logEvent("[CELEBRATION DEBUG] $message")
+    }
+
     private fun startHoldCelebrationCycle() {
         debugTrace("ENTER startHoldCelebrationCycle")
-        if (!running) return
+        if (!running) {
+            celebrationDebug("START ABORTED: running=false")
+            return
+        }
+
+        celebrationDebug("========== CELEBRATION CYCLE START ==========")
+        celebrationDebug("Current URL=${automationWebView()?.url.orEmpty()}")
 
         val records = loadVillageDataRecordsFromPrefs()
+        celebrationDebug("Database records=${records.size}")
+        records.forEachIndexed { i, r ->
+            celebrationDebug("DB[$i] id=${r.id} name=${r.namaVillage} isHoldCelebration=${r.isHoldCelebration}")
+        }
+
         holdCelebrationVillages = records
             .filter { it.isHoldCelebration }
             .map { it.id to it.namaVillage }
             .distinctBy { it.first }
             .toMutableList()
 
+        celebrationDebug("Selected Hold Celebration villages=${holdCelebrationVillages.size}")
+        holdCelebrationVillages.forEachIndexed { i, pair ->
+            celebrationDebug("TARGET[$i] id=${pair.first} name=${pair.second}")
+        }
+
         if (holdCelebrationVillages.isEmpty()) {
             logEvent("Hold Celebration: tidak ada village yang dicentang")
+            celebrationDebug("NO TARGET VILLAGE -> cycle finished")
             finishHoldCelebrationCycle()
             return
         }
@@ -2456,15 +2479,22 @@ private fun clickTransferSelected() {
             .apply()
         holdCelebrationIndex = 0
         holdCelebrationTransferPending = false
+        holdCelebrationDebugAttempt = 0
+
         logEvent("Hold Celebration: START — ${holdCelebrationVillages.size} village")
         updateNotification("Hold Celebration — ${holdCelebrationVillages.size} village")
         processHoldCelebrationVillage()
     }
 
     private fun processHoldCelebrationVillage() {
-        if (!running || !holdCelebrationInProgress) return
+        if (!running || !holdCelebrationInProgress) {
+            celebrationDebug("VILLAGE ABORTED: running=$running inProgress=$holdCelebrationInProgress")
+            return
+        }
+
         val pair = holdCelebrationVillages.getOrNull(holdCelebrationIndex)
         if (pair == null) {
+            celebrationDebug("VILLAGE INDEX=${holdCelebrationIndex} is outside list -> FINISH")
             finishHoldCelebrationCycle()
             return
         }
@@ -2472,24 +2502,46 @@ private fun clickTransferSelected() {
         val id = pair.first
         val name = pair.second
         val target = "${server}/build.php?id=30&gid=24&newdid=$id"
+        holdCelebrationDebugAttempt = 0
+        holdCelebrationTransferPending = false
+
+        celebrationDebug("---------- VILLAGE START ----------")
+        celebrationDebug("index=${holdCelebrationIndex + 1}/${holdCelebrationVillages.size}")
+        celebrationDebug("name=$name id=$id")
+        celebrationDebug("target=$target")
+        celebrationDebug("currentUrlBeforeLoad=${automationWebView()?.url.orEmpty()}")
         logEvent("Hold Celebration: [${holdCelebrationIndex + 1}/${holdCelebrationVillages.size}] $name — buka Celebration")
         updateNotification("Hold Celebration — $name")
         automationWebView()?.loadUrl(target)
     }
 
     private fun processHoldCelebrationPage() {
-        if (!running || !holdCelebrationInProgress) return
+        if (!running || !holdCelebrationInProgress) {
+            celebrationDebug("PAGE ABORTED: running=$running inProgress=$holdCelebrationInProgress")
+            return
+        }
+
         val pair = holdCelebrationVillages.getOrNull(holdCelebrationIndex)
         if (pair == null) {
+            celebrationDebug("PAGE: no village for index=$holdCelebrationIndex -> FINISH")
             finishHoldCelebrationCycle()
             return
         }
 
+        val id = pair.first
         val name = pair.second
-        handler.postDelayed({
-            if (!running || !holdCelebrationInProgress) return@postDelayed
+        val attempt = ++holdCelebrationDebugAttempt
 
-            logEvent("DEBUG Celebration: $name — mulai scan DOM")
+        celebrationDebug("PAGE INSPECT attempt=$attempt village=$name id=$id")
+        celebrationDebug("PAGE URL=${automationWebView()?.url.orEmpty()}")
+        celebrationDebug("transferPending=$holdCelebrationTransferPending")
+
+        handler.postDelayed({
+            if (!running || !holdCelebrationInProgress) {
+                celebrationDebug("INSPECT CALLBACK ABORTED: running=$running inProgress=$holdCelebrationInProgress")
+                return@postDelayed
+            }
+
             val js = """
                 (() => {
                     const visible = el => {
@@ -2498,248 +2550,260 @@ private fun clickTransferSelected() {
                         return s.display !== 'none' && s.visibility !== 'hidden' &&
                                s.opacity !== '0' && r.width > 0 && r.height > 0;
                     };
-                    const norm = s => String(s || '').replace(/\\s+/g, ' ').trim();
-                    const controls = [
+                    const norm = s => String(s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                    const all = [
                         ...document.querySelectorAll('button'),
                         ...document.querySelectorAll('input[type=button],input[type=submit]'),
                         ...document.querySelectorAll('[role="button"]'),
-                        ...document.querySelectorAll('a')
-                    ].filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+                        ...document.querySelectorAll('a'),
+                        ...document.querySelectorAll('div'),
+                        ...document.querySelectorAll('span')
+                    ];
+                    const controls = all.filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
                     const textOf = el => norm(
-                        el.innerText || el.textContent || el.value || el.title ||
-                        el.getAttribute('aria-label') || ''
+                        el.innerText || el.textContent || el.value || el.title || el.getAttribute('aria-label') || ''
                     );
+                    const outer = el => el ? String(el.outerHTML || '').replace(/\\s+/g,' ').slice(0,1200) : '';
+                    const hold = controls.find(el => textOf(el) === 'hold');
+                    const exchange = controls.find(el => /exchange\\s+resources/i.test(textOf(el)) || /exchange\\s+resources/i.test(String(el.value || '')));
+                    const transferEls = [...document.querySelectorAll('.inlineIcon.resource.transfer')].filter(visible);
+                    const transfer = transferEls[0] || null;
+                    const bodyText = norm(document.body?.innerText || '');
+                    const exchangeByClass = [...document.querySelectorAll('button.exchange, .exchange')].filter(visible);
+                    const candidates = controls.filter(el => {
+                        const t=textOf(el);
+                        return /hold|exchange|transfer|resource|selected/i.test(t);
+                    }).slice(0,30).map(el => ({tag:el.tagName,text:textOf(el),id:el.id||'',cls:el.className||'',html:outer(el)}));
 
-                    const hold = controls.find(el => /^hold$/i.test(textOf(el)));
-                    const exchange = controls.find(el => /exchange\s+resources/i.test(textOf(el)));
-                    const transferEls = [...document.querySelectorAll('.inlineIcon.resource.transfer')];
-                    const visibleTransfers = transferEls.filter(visible);
-
-                    const exchangeInfo = exchange ? {
-                        tag: exchange.tagName,
-                        id: exchange.id || '',
-                        cls: exchange.className || '',
-                        text: textOf(exchange),
-                        value: exchange.getAttribute('value') || '',
-                        did: exchange.getAttribute('did') || '',
-                        html: String(exchange.outerHTML || '').slice(0, 500)
-                    } : null;
-
-                    const transferInfo = visibleTransfers.slice(0, 5).map(el => ({
-                        tag: el.tagName,
-                        cls: String(el.className || ''),
-                        text: textOf(el),
-                        onclick: String(el.getAttribute('onclick') || '').slice(0, 350),
-                        html: String(el.outerHTML || '').slice(0, 700)
-                    }));
-
-                    const allButtonTexts = controls.map(textOf).filter(Boolean).slice(0, 40);
-                    const bodyText = norm(document.body ? document.body.innerText : '').slice(0, 1200);
-
-                    const esc = s => String(s || '').replace(/[|\\n\\r]/g, ' ');
-                    const summary =
-                        'url=' + esc(location.href) +
-                        '|title=' + esc(document.title) +
-                        '|controls=' + controls.length +
-                        '|hold=' + (hold ? 'YES' : 'NO') +
-                        '|exchange=' + (exchange ? 'YES' : 'NO') +
-                        '|transfer=' + visibleTransfers.length +
-                        '|buttons=' + esc(allButtonTexts.join(' || ')) +
-                        '|exchangeInfo=' + esc(JSON.stringify(exchangeInfo)) +
-                        '|transferInfo=' + esc(JSON.stringify(transferInfo)) +
-                        '|body=' + esc(bodyText);
-
-                    if (hold) {
-                        hold.scrollIntoView({block:'center', inline:'center'});
-                        try { AndroidFarm.onHoldCelebrationClick(${JSONObject.quote("$name")}); } catch (_) {}
-                        let clicked = false;
-                        try { hold.click(); clicked = true; } catch (_) {}
-                        if (!clicked) {
-                            ['mousedown','mouseup','click'].forEach(type => {
-                                try { hold.dispatchEvent(new MouseEvent(type, {bubbles:true, cancelable:true, view:window})); } catch (_) {}
-                            });
-                            clicked = true;
-                        }
-                        return 'HOLD_CLICKED|' + summary;
-                    }
-
-                    if (exchange) {
-                        if (visibleTransfers.length === 0) {
-                            return 'EXCHANGE_FOUND_TRANSFER_NOT_FOUND|' + summary;
-                        }
-
-                        const transfer = visibleTransfers[0];
-                        transfer.scrollIntoView({block:'center', inline:'center'});
-                        let clicked = false;
-                        let clickError = '';
-                        try {
-                            transfer.click();
-                            clicked = true;
-                        } catch (e) {
-                            clickError = String(e);
-                        }
-
-                        if (!clicked) {
-                            try {
-                                transfer.dispatchEvent(new MouseEvent('click', {
-                                    bubbles:true, cancelable:true, view:window
-                                }));
-                                clicked = true;
-                            } catch (e) {
-                                clickError = String(e);
-                            }
-                        }
-
-                        return (clicked ? 'EXCHANGE_TRANSFER_CLICKED|' : 'EXCHANGE_TRANSFER_CLICK_FAILED|') +
-                               summary + '|clickError=' + esc(clickError);
-                    }
-
-                    return 'NOTHING_FOUND|' + summary;
+                    return JSON.stringify({
+                        state:'inspect',
+                        url:location.href,
+                        title:document.title,
+                        readyState:document.readyState,
+                        bodyHasCelebration:/celebration/i.test(bodyText),
+                        bodyHasExchange:/exchange\\s+resources/i.test(bodyText),
+                        bodyHasHold:/\\bhold\\b/i.test(bodyText),
+                        buttonCount:document.querySelectorAll('button').length,
+                        visibleControlCount:controls.length,
+                        holdFound:!!hold,
+                        holdHtml:outer(hold),
+                        exchangeFound:!!exchange,
+                        exchangeHtml:outer(exchange),
+                        exchangeClassCount:exchangeByClass.length,
+                        exchangeClassHtml:outer(exchangeByClass[0]),
+                        transferCount:transferEls.length,
+                        transferFound:!!transfer,
+                        transferHtml:outer(transfer),
+                        transferOnclick:transfer?.getAttribute('onclick') || '',
+                        candidates:candidates
+                    });
                 })();
             """.trimIndent()
 
+            celebrationDebug("Running DOM inspection JS")
             automationWebView()?.evaluateJavascript(js) { raw ->
-                val result = raw.orEmpty()
-                    .removePrefix("\"").removeSuffix("\"")
-                    .replace("\\\"", "\"")
-                    .replace("\\\\n", " ")
-                    .replace("\\\\r", " ")
+                val result = raw.orEmpty().trim('"').replace("\\\"", "\"").replace("\\\\", "\\")
+                fun field(name: String): String = Regex("\\\"$name\\\":(\\\"(?:[^\\\"]|\\\\.)*\\\"|true|false|null|\\d+)").find(result)?.groupValues?.getOrNull(1).orEmpty()
+                fun strField(name: String): String = field(name).trim('"')
+
+                celebrationDebug("DOM RESULT rawLength=${raw.orEmpty().length} parsedLength=${result.length}")
+                celebrationDebug("readyState=${strField("readyState")} url=${strField("url")}")
+                celebrationDebug("buttonCount=${strField("buttonCount")} visibleControls=${strField("visibleControlCount")}")
+                celebrationDebug("bodyHasCelebration=${field("bodyHasCelebration")} bodyHasExchange=${field("bodyHasExchange")} bodyHasHold=${field("bodyHasHold")}")
+                celebrationDebug("HOLD found=${field("holdFound")}")
+                if (field("holdFound") == "true") celebrationDebug("HOLD HTML=${strField("holdHtml")}")
+                celebrationDebug("EXCHANGE found=${field("exchangeFound")} classCount=${field("exchangeClassCount")}")
+                if (field("exchangeFound") == "true") celebrationDebug("EXCHANGE HTML=${strField("exchangeHtml")}")
+                if (field("exchangeClassCount") != "0") celebrationDebug("EXCHANGE CLASS HTML=${strField("exchangeClassHtml")}")
+                celebrationDebug("TRANSFER found=${field("transferFound")} count=${field("transferCount")}")
+                if (field("transferFound") == "true") {
+                    celebrationDebug("TRANSFER HTML=${strField("transferHtml")}")
+                    celebrationDebug("TRANSFER onclick=${strField("transferOnclick")}")
+                }
+
+                val candidateText = Regex("\\\"candidates\\\":(\\[.*\\])").find(result)?.groupValues?.getOrNull(1).orEmpty()
+                if (candidateText.isNotBlank()) celebrationDebug("CANDIDATES=$candidateText")
 
                 when {
-                    result.startsWith("HOLD_CLICKED|") -> {
-                        logEvent("DEBUG Celebration: $name — Hold ditemukan dan click() dipanggil")
-                        holdCelebrationTransferPending = false
-                        holdCelebrationIndex++
-                        handler.postDelayed({ processHoldCelebrationVillage() }, 1500L)
+                    field("holdFound") == "true" -> {
+                        celebrationDebug("DECISION=HOLD_DIRECT")
+                        val clickJs = """
+                            (() => {
+                                const visible = el => { if(!el)return false; const s=getComputedStyle(el),r=el.getBoundingClientRect(); return s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0'&&r.width>0&&r.height>0; };
+                                const norm=s=>String(s||'').replace(/\\s+/g,' ').trim().toLowerCase();
+                                const els=[...document.querySelectorAll('button,input[type=button],input[type=submit],[role="button"],a')];
+                                const el=els.find(x=>visible(x)&&norm(x.innerText||x.textContent||x.value||x.title||x.getAttribute('aria-label')||'')==='hold');
+                                if(!el)return JSON.stringify({state:'hold_not_found_on_click'});
+                                el.scrollIntoView({block:'center',inline:'center'});
+                                let clickOk=true; try{el.click()}catch(e){clickOk=false; try{['mousedown','mouseup','click'].forEach(t=>el.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})))}catch(_){}}
+                                return JSON.stringify({state:'hold_clicked',clickOk,html:String(el.outerHTML||'').slice(0,1000)});
+                            })();
+                        """.trimIndent()
+                        automationWebView()?.evaluateJavascript(clickJs) { holdRaw ->
+                            val holdResult=holdRaw.orEmpty().trim('"').replace("\\\"","\"")
+                            celebrationDebug("HOLD CLICK RESULT=$holdResult")
+                            if (holdResult.contains("hold_clicked")) {
+                                celebrationDebug("HOLD SUCCESS -> advance to next village")
+                                holdCelebrationTransferPending=false
+                                holdCelebrationIndex++
+                                handler.postDelayed({ processHoldCelebrationVillage() },1200L)
+                            } else {
+                                celebrationDebug("HOLD CLICK FAILED -> retry inspect")
+                                handler.postDelayed({ processHoldCelebrationPage() },1000L)
+                            }
+                        }
                     }
+                    field("exchangeFound") == "true" -> {
+                        celebrationDebug("DECISION=EXCHANGE_FOUND")
+                        if (field("transferFound") != "true") {
+                            celebrationDebug("BLOCKED=EXCHANGE_FOUND_BUT_TRANSFER_HERO_NOT_FOUND")
+                            if (attempt < 15) {
+                                celebrationDebug("RETRY DOM INSPECT in 1000ms attempt=$attempt/15")
+                                handler.postDelayed({ processHoldCelebrationPage() },1000L)
+                            } else {
+                                celebrationDebug("GIVE UP after 15 attempts; advancing village")
+                                holdCelebrationIndex++
+                                handler.postDelayed({ processHoldCelebrationVillage() },1200L)
+                            }
+                            return@evaluateJavascript
+                        }
 
-                    result.startsWith("EXCHANGE_TRANSFER_CLICKED|") -> {
-                        logEvent("DEBUG Celebration: $name — Exchange resources ditemukan")
-                        logEvent("DEBUG Celebration: $name — Transfer Resource Hero ditemukan dan click() dipanggil")
-                        logEvent("DEBUG Celebration DOM: ${result.substringAfter('|').take(3500)}")
-                        holdCelebrationTransferPending = true
-                        handler.postDelayed({ clickCelebrationTransferSelected(name) }, 1800L)
+                        celebrationDebug("TRANSFER HERO FOUND -> CLICK TRANSFER HERO")
+                        val clickTransferJs = """
+                            (() => {
+                                const el=[...document.querySelectorAll('.inlineIcon.resource.transfer')].find(x=>{const s=getComputedStyle(x),r=x.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0;});
+                                if(!el)return JSON.stringify({state:'transfer_not_found'});
+                                el.scrollIntoView({block:'center',inline:'center'});
+                                const html=String(el.outerHTML||'').replace(/\\s+/g,' ').slice(0,1500);
+                                const onclick=el.getAttribute('onclick')||'';
+                                let ok=true; try{el.click()}catch(e){ok=false; try{el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}))}catch(_){}}
+                                return JSON.stringify({state:'transfer_clicked',ok,html,onClick:onclick});
+                            })();
+                        """.trimIndent()
+                        automationWebView()?.evaluateJavascript(clickTransferJs) { transferRaw ->
+                            val tr=transferRaw.orEmpty().trim('"').replace("\\\"","\"")
+                            celebrationDebug("TRANSFER HERO CLICK RESULT=$tr")
+                            if (tr.contains("transfer_clicked")) {
+                                holdCelebrationTransferPending=true
+                                celebrationDebug("TRANSFER HERO CLICK SUCCESS -> wait for Hero popup")
+                                handler.postDelayed({ clickCelebrationTransferSelected(name) },1200L)
+                            } else {
+                                celebrationDebug("TRANSFER HERO CLICK FAILED -> retry inspect")
+                                handler.postDelayed({ processHoldCelebrationPage() },1000L)
+                            }
+                        }
                     }
-
-                    result.startsWith("EXCHANGE_TRANSFER_CLICK_FAILED|") -> {
-                        logEvent("DEBUG Celebration: $name — Transfer Resource Hero ditemukan tetapi click GAGAL")
-                        logEvent("DEBUG Celebration DOM: ${result.substringAfter('|').take(3500)}")
-                        handler.postDelayed({ processHoldCelebrationPage() }, 1200L)
-                    }
-
-                    result.startsWith("EXCHANGE_FOUND_TRANSFER_NOT_FOUND|") -> {
-                        logEvent("DEBUG Celebration: $name — Exchange resources ADA, tetapi Transfer Resource Hero TIDAK ditemukan")
-                        logEvent("DEBUG Celebration DOM: ${result.substringAfter('|').take(3500)}")
-                        // Jangan langsung melewati village. Popup Hero bisa membutuhkan waktu untuk muncul.
-                        handler.postDelayed({ processHoldCelebrationPage() }, 1200L)
-                    }
-
                     else -> {
-                        logEvent("DEBUG Celebration: $name — Hold dan Exchange resources TIDAK ditemukan")
-                        logEvent("DEBUG Celebration DOM: ${result.substringAfter('|').take(3500)}")
-                        holdCelebrationIndex++
-                        handler.postDelayed({ processHoldCelebrationVillage() }, 1500L)
+                        celebrationDebug("DECISION=NOTHING_FOUND")
+                        celebrationDebug("No Hold and no Exchange resources detected")
+                        if (attempt < 15) {
+                            celebrationDebug("RETRY PAGE INSPECT in 1000ms attempt=$attempt/15")
+                            handler.postDelayed({ processHoldCelebrationPage() },1000L)
+                        } else {
+                            celebrationDebug("GIVE UP after 15 attempts; advancing village")
+                            holdCelebrationIndex++
+                            handler.postDelayed({ processHoldCelebrationVillage() },1200L)
+                        }
                     }
                 }
             }
-        }, 2500L)
+        }, 2000L)
     }
 
     private fun clickCelebrationTransferSelected(name: String) {
-        if (!running || !holdCelebrationInProgress || !holdCelebrationTransferPending) return
+        if (!running || !holdCelebrationInProgress || !holdCelebrationTransferPending) {
+            celebrationDebug("TRANSFER SELECTED ABORTED: running=$running inProgress=$holdCelebrationInProgress pending=$holdCelebrationTransferPending")
+            return
+        }
 
-        logEvent("DEBUG Celebration: $name — scan popup Hero untuk Transfer selected")
+        celebrationDebug("========== HERO TRANSFER POPUP INSPECTION ==========")
+        celebrationDebug("Village=$name URL=${automationWebView()?.url.orEmpty()}")
 
         val js = """
             (() => {
                 const visible = el => {
                     if (!el) return false;
                     const s = getComputedStyle(el), r = el.getBoundingClientRect();
-                    return s.display !== 'none' && s.visibility !== 'hidden' &&
-                           s.opacity !== '0' && r.width > 0 && r.height > 0;
+                    return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const norm = s => String(s || '').replace(/\\s+/g,' ').trim();
-                const controls = [
+                const norm = s => String(s || '').replace(/\\s+/g,' ').trim().toLowerCase();
+                const textOf = el => norm(el.innerText || el.textContent || el.value || el.title || el.getAttribute('aria-label') || '');
+                const outer = el => el ? String(el.outerHTML || '').replace(/\\s+/g,' ').slice(0,1800) : '';
+                const all = [
                     ...document.querySelectorAll('button'),
                     ...document.querySelectorAll('input[type=button],input[type=submit]'),
                     ...document.querySelectorAll('[role="button"]'),
-                    ...document.querySelectorAll('a')
-                ].filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
-                const textOf = el => norm(
-                    el.innerText || el.textContent || el.value || el.title ||
-                    el.getAttribute('aria-label') || ''
-                );
-
-                const btn = controls.find(el => /transfer\s+selected/i.test(textOf(el)));
-                const transferTexts = controls.map(textOf).filter(t => /transfer|resource|selected/i.test(t)).slice(0, 30);
-                const popupTexts = norm(document.body ? document.body.innerText : '').slice(-3500);
-
-                const info = 'url=' + String(location.href) +
-                    '|controls=' + controls.length +
-                    '|transferSelected=' + (btn ? 'YES' : 'NO') +
-                    '|transferCandidates=' + transferTexts.join(' || ') +
-                    '|bodyTail=' + popupTexts;
-
-                if (!btn) return 'NOT_FOUND|' + info;
-
-                const html = String(btn.outerHTML || '').slice(0, 1200);
-                let clicked = false;
-                let clickError = '';
-                try {
-                    btn.scrollIntoView({block:'center', inline:'center'});
-                    btn.click();
-                    clicked = true;
-                } catch (e) {
-                    clickError = String(e);
-                }
-
-                if (!clicked) {
-                    try {
-                        ['mousedown','mouseup','click'].forEach(type => {
-                            btn.dispatchEvent(new MouseEvent(type, {bubbles:true, cancelable:true, view:window}));
-                        });
-                        clicked = true;
-                    } catch (e) {
-                        clickError = String(e);
-                    }
-                }
-
-                return (clicked ? 'CLICKED|' : 'CLICK_FAILED|') +
-                    info + '|html=' + html + '|error=' + clickError;
+                    ...document.querySelectorAll('a'),
+                    ...document.querySelectorAll('[class*="dialog"],[class*="popup"],[class*="modal"]')
+                ];
+                const controls = all.filter(el => visible(el));
+                const transferCandidates = controls.filter(el => /transfer|selected|resource/i.test(textOf(el))).slice(0,50).map(el => ({tag:el.tagName,text:textOf(el),id:el.id||'',cls:el.className||'',disabled:!!el.disabled,html:outer(el)}));
+                const exact = controls.find(el => /transfer\\s+selected/i.test(textOf(el)));
+                const partial = controls.find(el => textOf(el).includes('transfer') && textOf(el).includes('selected'));
+                const heroPopup = [...document.querySelectorAll('body *')].find(el => visible(el) && /transfer selected/i.test(textOf(el)));
+                const bodyText=norm(document.body?.innerText||'');
+                return JSON.stringify({
+                    state:'inspect_popup',
+                    url:location.href,
+                    readyState:document.readyState,
+                    exactFound:!!exact,
+                    partialFound:!!partial,
+                    heroTextFound:/transfer\\s+selected/i.test(bodyText),
+                    exactHtml:outer(exact),
+                    partialHtml:outer(partial),
+                    heroPopupHtml:outer(heroPopup),
+                    candidates:transferCandidates
+                });
             })();
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty()
-                .removePrefix("\"").removeSuffix("\"")
-                .replace("\\\"", "\"")
-                .replace("\\\\n", " ")
-                .replace("\\\\r", " ")
+            val result=raw.orEmpty().trim('"').replace("\\\"","\"").replace("\\\\","\\")
+            fun field(name:String):String=Regex("\\\"$name\\\":(\\\"(?:[^\\\"]|\\\\.)*\\\"|true|false|null)").find(result)?.groupValues?.getOrNull(1).orEmpty()
+            fun str(name:String)=field(name).trim('"')
+            celebrationDebug("POPUP RESULT readyState=${str("readyState")} exactFound=${field("exactFound")} partialFound=${field("partialFound")} heroTextFound=${field("heroTextFound")}")
+            if(field("exactFound")=="true") celebrationDebug("TRANSFER SELECTED HTML=${str("exactHtml")}")
+            if(field("partialFound")=="true") celebrationDebug("TRANSFER SELECTED PARTIAL HTML=${str("partialHtml")}")
+            if(field("heroTextFound")=="true") celebrationDebug("BODY contains Transfer selected")
+            val candidates=Regex("\\\"candidates\\\":(\\[.*\\])").find(result)?.groupValues?.getOrNull(1).orEmpty()
+            if(candidates.isNotBlank()) celebrationDebug("POPUP CANDIDATES=$candidates")
 
-            when {
-                result.startsWith("CLICKED|") -> {
-                    logEvent("DEBUG Celebration: $name — Transfer selected DITEMUKAN dan DIKLIK")
-                    logEvent("DEBUG Celebration Transfer: ${result.substringAfter('|').take(3500)}")
-                    handler.postDelayed({
-                        if (!running || !holdCelebrationInProgress) return@postDelayed
-                        holdCelebrationTransferPending = false
-                        val id = holdCelebrationVillages.getOrNull(holdCelebrationIndex)?.first.orEmpty()
-                        logEvent("DEBUG Celebration: $name — refresh Celebration, village ID=$id")
-                        automationWebView()?.loadUrl("${server}/build.php?id=30&gid=24&newdid=$id")
-                    }, 2500L)
+            if(field("exactFound")=="true" || field("partialFound")=="true") {
+                val clickJs="""
+                    (()=>{
+                        const norm=s=>String(s||'').replace(/\\s+/g,' ').trim().toLowerCase();
+                        const visible=el=>{if(!el)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0'&&r.width>0&&r.height>0;};
+                        const els=[...document.querySelectorAll('button,input[type=button],input[type=submit],[role="button"],a')];
+                        const el=els.find(x=>visible(x)&&/transfer\\s+selected/i.test(norm(x.innerText||x.textContent||x.value||x.title||x.getAttribute('aria-label')||'')));
+                        if(!el)return JSON.stringify({state:'not_found'});
+                        const html=String(el.outerHTML||'').replace(/\\s+/g,' ').slice(0,1500);
+                        let ok=true;try{el.scrollIntoView({block:'center',inline:'center'});el.click()}catch(e){ok=false;try{['mousedown','mouseup','click'].forEach(t=>el.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})))}catch(_){}}
+                        return JSON.stringify({state:'clicked',ok,html});
+                    })();
+                """.trimIndent()
+                automationWebView()?.evaluateJavascript(clickJs){ clickRaw ->
+                    val cr=clickRaw.orEmpty().trim('"').replace("\\\"","\"")
+                    celebrationDebug("TRANSFER SELECTED CLICK RESULT=$cr")
+                    if(cr.contains("clicked")) {
+                        logEvent("Hold Celebration: $name — Transfer selected diklik, menunggu refresh")
+                        celebrationDebug("TRANSFER SELECTED SUCCESS -> wait 2500ms then reload Celebration")
+                        handler.postDelayed({
+                            if(!running||!holdCelebrationInProgress)return@postDelayed
+                            holdCelebrationTransferPending=false
+                            val id=holdCelebrationVillages.getOrNull(holdCelebrationIndex)?.first.orEmpty()
+                            val target="${server}/build.php?id=30&gid=24&newdid=$id"
+                            celebrationDebug("RELOAD CELEBRATION after transfer: $target")
+                            automationWebView()?.loadUrl(target)
+                        },2500L)
+                    } else {
+                        celebrationDebug("TRANSFER SELECTED CLICK FAILED -> retry popup inspection")
+                        handler.postDelayed({clickCelebrationTransferSelected(name)},1000L)
+                    }
                 }
-
-                result.startsWith("CLICK_FAILED|") -> {
-                    logEvent("DEBUG Celebration: $name — Transfer selected ADA tetapi click GAGAL")
-                    logEvent("DEBUG Celebration Transfer: ${result.substringAfter('|').take(3500)}")
-                    handler.postDelayed({ clickCelebrationTransferSelected(name) }, 1000L)
-                }
-
-                else -> {
-                    logEvent("DEBUG Celebration: $name — Transfer selected BELUM ditemukan")
-                    logEvent("DEBUG Celebration Transfer: ${result.substringAfter('|').take(3500)}")
-                    handler.postDelayed({ clickCelebrationTransferSelected(name) }, 1000L)
-                }
+            } else {
+                celebrationDebug("BLOCKED=TRANSFER_SELECTED_NOT_FOUND")
+                celebrationDebug("Popup may not be open yet OR selector/text differs")
+                handler.postDelayed({clickCelebrationTransferSelected(name)},1000L)
             }
         }
     }
