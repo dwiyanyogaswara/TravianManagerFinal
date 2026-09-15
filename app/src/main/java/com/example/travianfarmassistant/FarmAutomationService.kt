@@ -2585,7 +2585,10 @@ private fun clickTransferSelected() {
                         html: (el.outerHTML || '').slice(0,1200)
                     } : null;
                     const holdCandidates = controls.filter(el => /^hold$/i.test(textOf(el)));
-                    const exchangeCandidates = controls.filter(el => /exchange\\s+resources/i.test(textOf(el)));
+                    const exchangeCandidates = [
+                        ...document.querySelectorAll('button.exchange'),
+                        ...document.querySelectorAll('button')
+                    ].filter((el, i, arr) => arr.indexOf(el) === i && /exchange\s+resources/i.test(textOf(el) || el.getAttribute('value') || el.getAttribute('title') || ''));
                     const transferCandidates = [...document.querySelectorAll('.inlineIcon.resource.transfer')].filter(visible);
                     const bodyText = String(document.body?.innerText || '').replace(/\\s+/g,' ').trim();
                     const lower = bodyText.toLowerCase();
@@ -2696,7 +2699,7 @@ private fun clickTransferSelected() {
                     }
                 }
             }
-        }, 1500L)
+        }, 2000L)
     }
 
     private fun clickCelebrationTransferSelected(name: String) {
