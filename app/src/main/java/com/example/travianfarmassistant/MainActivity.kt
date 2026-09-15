@@ -90,7 +90,8 @@ class MainActivity : Activity() {
         val resourceId: String,
         val resourceGid: String,
         val minLvl: Int,
-        val linkTown: String
+        val linkTown: String,
+        val isHoldCelebration: Boolean
     )
 
     private fun currentServerBase(): String {
@@ -141,7 +142,8 @@ class MainActivity : Activity() {
                     resourceId = item.optString("ResourceId").trim(),
                     resourceGid = item.optString("ResourceGid").trim(),
                     minLvl = item.optInt("MinLvl", -1),
-                    linkTown = rebaseTravianUrl(item.optString("LinkTown", "-").trim().ifBlank { "-" })
+                    linkTown = rebaseTravianUrl(item.optString("LinkTown", "-").trim().ifBlank { "-" }),
+                    isHoldCelebration = item.optBoolean("IsHoldCelebration", false)
                 )
             )
         }
@@ -162,6 +164,7 @@ class MainActivity : Activity() {
                 put("ResourceGid", item.resourceGid)
                 put("MinLvl", item.minLvl)
                 put("LinkTown", rebaseTravianUrl(item.linkTown))
+                put("IsHoldCelebration", item.isHoldCelebration)
             })
         }
         getSharedPreferences("config", MODE_PRIVATE).edit()
@@ -179,7 +182,8 @@ class MainActivity : Activity() {
         resourceGid: String? = null,
         minLvl: Int? = null,
         linkTown: String? = null,
-        isChecklist: Boolean? = null
+        isChecklist: Boolean? = null,
+        isHoldCelebration: Boolean? = null
     ) {
         debugTrace("ENTER upsertVillageDataRecord")
         val cleanId = id.trim()
@@ -196,9 +200,21 @@ class MainActivity : Activity() {
             resourceId = resourceId?.trim()?.takeIf { it.isNotBlank() } ?: old?.resourceId.orEmpty(),
             resourceGid = resourceGid?.trim()?.takeIf { it.isNotBlank() } ?: old?.resourceGid.orEmpty(),
             minLvl = minLvl ?: old?.minLvl ?: -1,
-            linkTown = linkTown?.trim()?.takeIf { it.isNotBlank() } ?: old?.linkTown ?: "-"
+            linkTown = linkTown?.trim()?.takeIf { it.isNotBlank() } ?: old?.linkTown ?: "-",
+            isHoldCelebration = isHoldCelebration ?: old?.isHoldCelebration ?: false
         )
         if (index >= 0) records[index] = updated else records.add(updated)
+        saveVillageDataRecords(records)
+    }
+
+    private fun updateVillageHoldCelebrationData(id: String, checked: Boolean) {
+        debugTrace("ENTER updateVillageHoldCelebrationData")
+        val cleanId = id.trim()
+        if (cleanId.isBlank()) return
+        val records = loadVillageDataRecords()
+        val index = records.indexOfFirst { it.id == cleanId }
+        if (index < 0) return
+        records[index] = records[index].copy(isHoldCelebration = checked)
         saveVillageDataRecords(records)
     }
 
@@ -889,8 +905,12 @@ class MainActivity : Activity() {
         val ids = mutableSetOf<String>()
         for (i in 1 until villageChecklist.childCount) {
             val row = villageChecklist.getChildAt(i) as? LinearLayout ?: continue
-            val box = row.getChildAt(0) as? CheckBox ?: continue
-            if (box.isChecked) box.tag?.toString()?.trim()?.takeIf(String::isNotBlank)?.let(ids::add)
+            for (j in 0 until row.childCount) {
+                val card = row.getChildAt(j) as? LinearLayout ?: continue
+                val id = card.tag?.toString().orEmpty()
+                val box = card.findViewWithTag<CheckBox>("resource:$id")
+                if (box?.isChecked == true && id.isNotBlank()) ids.add(id)
+            }
         }
         return ids
     }
@@ -912,10 +932,10 @@ class MainActivity : Activity() {
 
         val lines = mutableListOf<String>()
         lines += "DATABASE VILLAGE (${records.size})"
-        lines += "CHK | NAMA | ID | LINK VILLAGE | LINK RESOURCE | RES ID | GID | MIN LVL | LINK TOWN"
-        lines += "----+------+----+--------------+---------------+--------+-----+-------+---------"
+        lines += "CHK | NAMA | ID | LINK VILLAGE | LINK RESOURCE | RES ID | GID | MIN LVL | LINK TOWN | HOLD CELEBRATION"
+        lines += "----+------+----+--------------+---------------+--------+-----+-------+---------+-----------------"
         records.forEach { item ->
-            lines += "${if (item.isChecklist) "✓" else "-"} | ${item.namaVillage} | ${item.id} | ${item.linkVillage.ifBlank { "-" }} | ${item.linkResource.ifBlank { "-" }} | ${item.resourceId.ifBlank { "-" }} | ${item.resourceGid.ifBlank { "-" }} | ${if (item.minLvl >= 0) "L${item.minLvl}" else "-"} | ${item.linkTown.ifBlank { "-" }}"
+            lines += "${if (item.isChecklist) "✓" else "-"} | ${item.namaVillage} | ${item.id} | ${item.linkVillage.ifBlank { "-" }} | ${item.linkResource.ifBlank { "-" }} | ${item.resourceId.ifBlank { "-" }} | ${item.resourceGid.ifBlank { "-" }} | ${if (item.minLvl >= 0) "L${item.minLvl}" else "-"} | ${item.linkTown.ifBlank { "-" }} | ${if (item.isHoldCelebration) "✓" else "-"}"
         }
         villageDatabaseView.text = lines.joinToString("\n")
         villageDatabaseView.setTextIsSelectable(true)
@@ -963,13 +983,20 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, checked ->
                 for (i in 1 until villageChecklist.childCount) {
                     val row = villageChecklist.getChildAt(i) as? LinearLayout ?: continue
-                    val box = row.getChildAt(0) as? CheckBox ?: continue
-                    box.isChecked = checked
-                    box.tag?.toString()?.let { updateVillageChecklistData(it, checked) }
+                    for (j in 0 until row.childCount) {
+                        val card = row.getChildAt(j) as? LinearLayout ?: continue
+                        val id = card.tag?.toString().orEmpty()
+                        val box = card.findViewWithTag<CheckBox>("resource:$id")
+                        if (box != null) {
+                            box.isChecked = checked
+                            updateVillageChecklistData(id, checked)
+                        }
+                    }
                 }
                 getSharedPreferences("config", MODE_PRIVATE).edit()
                     .putBoolean("resource_builder_selection_configured", true)
                     .putStringSet("resource_builder_selected_villages", selectedVillageIds())
+                    .putString("resource_builder_villages_json", villageSelectionJson())
                     .apply()
             }
         }
@@ -990,29 +1017,43 @@ class MainActivity : Activity() {
             "$townServer/build.php?id=40&gid=31" to "City Wall"
         )
 
-        loadedVillages.forEach { (id, name) ->
-            val record = villageRecords[id]
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        var gridRow: LinearLayout? = null
+        loadedVillages.entries.toList().forEachIndexed { index, (id, name) ->
+            if (index % 2 == 0) {
+                gridRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                }
+                villageChecklist.addView(gridRow)
             }
+
+            val record = villageRecords[id]
             val currentMinLevel = record?.minLvl ?: -1
             val currentTownKey = record?.linkTown?.trim().orEmpty().ifBlank { "-" }
+            val currentHoldCelebration = record?.isHoldCelebration ?: false
+
             fun townDisplayText(townKey: String): String {
                 val townText = townOptions.firstOrNull { it.first == townKey }?.second ?: "-"
                 val minText = if (currentMinLevel >= 0) "L$currentMinLevel" else "-"
-                // loadedVillages may already contain the old resource level suffix
-                // (e.g. "A1 - Lvl 10"). For the Town Builder label, show only the
-                // village name followed by the current minimum resource level.
                 val displayName = name.substringBefore(" - Lvl ").trim().ifBlank { name }
                 return "$displayName - min lvl $minText - $townText"
             }
 
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(6, 4, 6, 6)
+                tag = id
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(3, 3, 3, 3)
+                }
+            }
+
             val box = CheckBox(this).apply {
                 text = townDisplayText(currentTownKey)
-                tag = id
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                tag = "resource:$id"
                 isEnabled = !selectionControlsLocked
                 isChecked = if (configured) saved.contains(id) else true
                 setOnCheckedChangeListener { _, checked ->
@@ -1024,8 +1065,18 @@ class MainActivity : Activity() {
                         .apply()
                 }
             }
+
+            val townAndHold = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+
             val spinner = Spinner(this).apply {
-                layoutParams = LinearLayout.LayoutParams(170, LinearLayout.LayoutParams.WRAP_CONTENT)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 adapter = object : android.widget.ArrayAdapter<String>(
                     this@MainActivity,
                     android.R.layout.simple_spinner_item,
@@ -1039,7 +1090,7 @@ class MainActivity : Activity() {
                         tv.gravity = android.view.Gravity.CENTER_VERTICAL
                         tv.setSingleLine(true)
                         tv.ellipsize = android.text.TextUtils.TruncateAt.END
-                        tv.setPadding(10, 6, 8, 6)
+                        tv.setPadding(8, 4, 6, 4)
                         return tv
                     }
 
@@ -1053,8 +1104,7 @@ class MainActivity : Activity() {
                         return tv
                     }
                 }
-                val current = currentTownKey
-                setSelection(townOptions.indexOfFirst { it.first == current }.coerceAtLeast(0))
+                setSelection(townOptions.indexOfFirst { it.first == currentTownKey }.coerceAtLeast(0))
                 isEnabled = !selectionControlsLocked
                 onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
                     override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
@@ -1070,9 +1120,23 @@ class MainActivity : Activity() {
                     }
                 }
             }
-            row.addView(box)
-            row.addView(spinner)
-            villageChecklist.addView(row)
+
+            val hold = CheckBox(this).apply {
+                text = "isHoldCelebration"
+                textSize = 11f
+                setPadding(4, 0, 0, 0)
+                isEnabled = !selectionControlsLocked
+                isChecked = currentHoldCelebration
+                setOnCheckedChangeListener { _, checked ->
+                    updateVillageHoldCelebrationData(id, checked)
+                }
+            }
+
+            townAndHold.addView(spinner)
+            townAndHold.addView(hold)
+            card.addView(box)
+            card.addView(townAndHold)
+            gridRow?.addView(card)
         }
 
         logEvent("UI: ${loadedVillages.size} village dimuat: ${loadedVillages.values.joinToString(" | ")}")

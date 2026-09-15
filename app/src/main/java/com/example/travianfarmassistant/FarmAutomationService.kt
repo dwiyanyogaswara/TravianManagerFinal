@@ -121,7 +121,8 @@ class FarmAutomationService : Service() {
         val resourceId: String,
         val resourceGid: String,
         val minLvl: Int,
-        val linkTown: String
+        val linkTown: String,
+        val isHoldCelebration: Boolean
     )
 
     private fun rebaseTravianUrl(value: String): String {
@@ -160,7 +161,8 @@ class FarmAutomationService : Service() {
                     resourceId = item.optString("ResourceId").trim(),
                     resourceGid = item.optString("ResourceGid").trim(),
                     minLvl = item.optInt("MinLvl", -1),
-                    linkTown = rebaseTravianUrl(item.optString("LinkTown", "-").trim().ifBlank { "-" })
+                    linkTown = rebaseTravianUrl(item.optString("LinkTown", "-").trim().ifBlank { "-" }),
+                    isHoldCelebration = item.optBoolean("IsHoldCelebration", false)
                 )
             )
         }
@@ -180,6 +182,7 @@ class FarmAutomationService : Service() {
                 put("ResourceGid", item.resourceGid)
                 put("MinLvl", item.minLvl)
                 put("LinkTown", rebaseTravianUrl(item.linkTown))
+                put("IsHoldCelebration", item.isHoldCelebration)
             })
         }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("village_data_json", array.toString()).apply()
@@ -223,6 +226,9 @@ class FarmAutomationService : Service() {
     private var resourceBuilderEnabled = true
     private var townBuilderEnabled = false
     private var townBuilderInProgress = false
+    private var holdCelebrationInProgress = false
+    private var holdCelebrationVillages = mutableListOf<Pair<String, String>>()
+    private var holdCelebrationIndex = 0
     private var farmListEnabled = true
     private var builderSelectionConfigured = false
     private var selectedBuilderVillageIds = emptySet<String>()
@@ -777,8 +783,7 @@ class FarmAutomationService : Service() {
         } else if (townBuilderEnabled) {
             startTownBuilderCycle()
         } else {
-            logEvent("Farm List OFF dan Resource Builder OFF — tidak ada aksi pada siklus ini")
-            scheduleNextRandomRun()
+            startHoldCelebrationCycle()
         }
     }
 
@@ -893,6 +898,11 @@ class FarmAutomationService : Service() {
                 }
                 return@acceptCookiesIfPresent
             }
+            if (holdCelebrationInProgress && lower.contains("build.php")) {
+                processHoldCelebrationPage()
+                return@acceptCookiesIfPresent
+            }
+
             if (townBuilderInProgress && lower.contains("build.php")) {
                 processTownBuilderPage()
                 return@acceptCookiesIfPresent
@@ -1380,7 +1390,7 @@ class FarmAutomationService : Service() {
             if (townBuilderEnabled) {
                 startTownBuilderCycle()
             } else {
-                scheduleNextRandomRun()
+                startHoldCelebrationCycle()
             }
             return
         }
@@ -2416,6 +2426,112 @@ private fun clickTransferSelected() {
         pendingUpgradeCosts = longArrayOf(0L,0L,0L,0L)
         builderStage = "IDLE"
         logEvent("Town Builder: END")
+        startHoldCelebrationCycle()
+    }
+
+    private fun startHoldCelebrationCycle() {
+        debugTrace("ENTER startHoldCelebrationCycle")
+        if (!running) return
+
+        val records = loadVillageDataRecordsFromPrefs()
+        holdCelebrationVillages = records
+            .filter { it.isHoldCelebration }
+            .map { it.id to it.namaVillage }
+            .distinctBy { it.first }
+            .toMutableList()
+
+        if (holdCelebrationVillages.isEmpty()) {
+            logEvent("Hold Celebration: tidak ada village yang dicentang")
+            finishHoldCelebrationCycle()
+            return
+        }
+
+        holdCelebrationInProgress = true
+        holdCelebrationIndex = 0
+        logEvent("Hold Celebration: START — ${holdCelebrationVillages.size} village")
+        updateNotification("Hold Celebration — ${holdCelebrationVillages.size} village")
+        processHoldCelebrationVillage()
+    }
+
+    private fun processHoldCelebrationVillage() {
+        if (!running || !holdCelebrationInProgress) return
+        val pair = holdCelebrationVillages.getOrNull(holdCelebrationIndex)
+        if (pair == null) {
+            finishHoldCelebrationCycle()
+            return
+        }
+
+        val id = pair.first
+        val name = pair.second
+        val target = "${server}/build.php?id=30&gid=24&newdid=$id"
+        logEvent("Hold Celebration: [${holdCelebrationIndex + 1}/${holdCelebrationVillages.size}] $name — buka Celebration")
+        updateNotification("Hold Celebration — $name")
+        automationWebView()?.loadUrl(target)
+    }
+
+    private fun processHoldCelebrationPage() {
+        if (!running || !holdCelebrationInProgress) return
+        val pair = holdCelebrationVillages.getOrNull(holdCelebrationIndex)
+        if (pair == null) {
+            finishHoldCelebrationCycle()
+            return
+        }
+
+        val name = pair.second
+        handler.postDelayed({
+            if (!running || !holdCelebrationInProgress) return@postDelayed
+            val js = """
+                (() => {
+                    const visible = el => {
+                        if (!el) return false;
+                        const s = getComputedStyle(el), r = el.getBoundingClientRect();
+                        return s.display !== 'none' && s.visibility !== 'hidden' &&
+                               s.opacity !== '0' && r.width > 0 && r.height > 0;
+                    };
+                    const norm = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                    const controls = [
+                        ...document.querySelectorAll('button'),
+                        ...document.querySelectorAll('input[type=button],input[type=submit]'),
+                        ...document.querySelectorAll('[role="button"]'),
+                        ...document.querySelectorAll('a')
+                    ].filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+
+                    const btn = controls.find(el => norm(
+                        el.innerText || el.textContent || el.value || el.title ||
+                        el.getAttribute('aria-label') || ''
+                    ) === 'hold');
+
+                    if (!btn) return JSON.stringify({state:'not_found'});
+                    btn.scrollIntoView({block:'center', inline:'center'});
+                    try { btn.click(); } catch (_) {
+                        ['mousedown','mouseup','click'].forEach(type => {
+                            try { btn.dispatchEvent(new MouseEvent(type, {
+                                bubbles:true, cancelable:true, view:window
+                            })); } catch (_) {}
+                        });
+                    }
+                    return JSON.stringify({state:'clicked'});
+                })();
+            """.trimIndent()
+            automationWebView()?.evaluateJavascript(js) { raw ->
+                val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+                if (result.contains("\"state\":\"clicked\"")) {
+                    logEvent("Nama Village $name Hold Celebration Success")
+                } else {
+                    logEvent("Nama Village $name Hold Celebration: tombol Hold tidak ditemukan")
+                }
+                holdCelebrationIndex++
+                handler.postDelayed({ processHoldCelebrationVillage() }, 1200L)
+            }
+        }, 2000L)
+    }
+
+    private fun finishHoldCelebrationCycle() {
+        debugTrace("ENTER finishHoldCelebrationCycle")
+        holdCelebrationInProgress = false
+        holdCelebrationVillages.clear()
+        holdCelebrationIndex = 0
+        logEvent("Hold Celebration: END")
         logEvent("CICLE END")
         scheduleNextRandomRun()
         updateNotification("Next Run ${timeFormat.format(Date(nextAt))} | dalam ${formatDuration((nextAt - System.currentTimeMillis()).coerceAtLeast(0L))}")
@@ -2707,6 +2823,10 @@ private fun clickTransferSelected() {
         }
         if (!townBuilderInProgress && townBuilderEnabled) {
             startTownBuilderCycle()
+            return
+        }
+        if (!townBuilderInProgress) {
+            startHoldCelebrationCycle()
             return
         }
         builderInProgress = false
