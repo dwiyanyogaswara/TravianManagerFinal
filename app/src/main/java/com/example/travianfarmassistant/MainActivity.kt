@@ -312,6 +312,7 @@ class MainActivity : Activity() {
     private var loginRetryCount = 0
     private var reloginRequested = false
     private var farmListRequested = false
+    private var logoutCleanupInProgress = false
     private var pendingStartAll = false
     private var startAllAttempt = 0
     private var pendingUsername = ""
@@ -699,81 +700,102 @@ class MainActivity : Activity() {
             .setMessage("Bot akan dihentikan dan seluruh data aplikasi akan dihapus: Village, Resource Builder, Capacity Overview, konfigurasi, credential, session Travian, cache WebView, dan log.")
             .setNegativeButton("BATAL", null)
             .setPositiveButton("LOGOUT & HAPUS SEMUA") { _, _ ->
+                logoutCleanupInProgress = true
                 logEvent("LOGOUT & HAPUS SEMUA dimulai")
 
-                // 1. Hentikan automation sebelum membersihkan state agar service
-                //    tidak menulis kembali data ketika proses penghapusan berjalan.
-                if (running || getSharedPreferences("config", MODE_PRIVATE).getBoolean("service_running", false)) {
-                    stopScheduler()
-                } else {
-                    running = false
-                    pendingStartAll = false
-                }
+                val logoutJs = """
+                    (() => {
+                        try {
+                            const el = document.querySelector(
+                                'a.layoutButton.logout[onclick*="auth/logout"], a#button6aaa328d7a848'
+                            );
+                            if (el) { el.click(); return 'clicked'; }
+                            return 'not_found';
+                        } catch (e) { return 'error'; }
+                    })();
+                """.trimIndent()
 
-                // 2. Hapus credential database.
-                runCatching { CredentialDatabase(this).clear() }
+                runCatching { webView.evaluateJavascript(logoutJs, null) }
+                runCatching { FarmAutomationService.requestTravianLogout() }
 
-                // 3. Hapus SEMUA SharedPreferences aplikasi (termasuk database
-                //    village, checklist, Resource Builder, Capacity Overview,
-                //    cycle state, konfigurasi server/interval, dan debug state).
-                getSharedPreferences("config", MODE_PRIVATE).edit().clear().commit()
-
-                // 4. Bersihkan state RAM yang dipakai UI.
-                loadedVillages.clear()
-                villageScanActive = false
-                villageScanTargets.clear()
-                villageScanResults.clear()
-                villageScanIndex = 0
-                villageScanExpected = 0
-                villageScanRetry = 0
-                villageScanPageRetry = 0
-                villageScanDataRetry = 0
-                resourceSnapshots.clear()
-                villageMinLevels.clear()
-                pendingUsername = ""
-                pendingPassword = ""
-                loginInProgress = false
-                reloginRequested = false
-                farmListRequested = false
-
-                if (::villageChecklist.isInitialized) villageChecklist.removeAllViews()
-                if (::capacityOverview.isInitialized) capacityOverview.removeAllViews()
-                if (::capacityStatus.isInitialized) {
-                    capacityStatus.text = "Belum ada data resource. Tekan REFRESH VILLAGE untuk membaca semua village."
-                }
-                if (::villageDatabaseView.isInitialized) villageDatabaseView.text = "DATABASE VILLAGE: kosong"
-                if (::refreshVillageLinkPreview.isInitialized) refreshVillageLinkPreview.text = "REFRESH VILLAGE LINK: -"
-                if (::resourceBuilderVillageLinkPreview.isInitialized) resourceBuilderVillageLinkPreview.text = "RES BUILDER LINK: -"
-
-                usernameInput.setText("")
-                passwordInput.setText("")
-                status.text = "Status: LOGOUT"
-                farmStatus.text = "Logout berhasil — semua data aplikasi dihapus."
-                nextRun.text = "Next run: --"
-                updateBotToggleVisual(false)
-                botToggle.setOnCheckedChangeListener(null)
-                botToggle.isChecked = false
-                botToggle.setOnCheckedChangeListener(this@MainActivity::handleBotToggle)
-                setSelectionControlsLocked(false)
-
-                // 5. Hapus session/cookie/cache/storage WebView.
-                val cookieManager = CookieManager.getInstance()
-                cookieManager.removeAllCookies {
-                    cookieManager.flush()
-                    runOnUiThread {
-                        runCatching { webView.clearCache(true) }
-                        runCatching { webView.clearHistory() }
-                        runCatching { webView.clearFormData() }
-                        runCatching { android.webkit.WebStorage.getInstance().deleteAllData() }
-                    }
-                }
-                cookieManager.flush()
-
-                // Hapus log terakhir. Jangan panggil logEvent setelah ini karena
-                // itu akan membuat file log baru lagi.
-                clearActivityLog()
+                handler.postDelayed({
+                    if (isFinishing) return@postDelayed
+                    completeLogoutAndClearDatabase()
+                }, 1200L)
             }
+            .show()
     }
+
+    private fun completeLogoutAndClearDatabase() {
+        debugTrace("ENTER completeLogoutAndClearDatabase")
+
+        if (running || getSharedPreferences("config", MODE_PRIVATE).getBoolean("service_running", false)) {
+            stopScheduler()
+        } else {
+            running = false
+            pendingStartAll = false
+        }
+
+        runCatching { CredentialDatabase(this).clear() }
+        getSharedPreferences("config", MODE_PRIVATE).edit().clear().commit()
+
+        loadedVillages.clear()
+        villageScanActive = false
+        villageScanTargets.clear()
+        villageScanResults.clear()
+        villageScanIndex = 0
+        villageScanExpected = 0
+        villageScanRetry = 0
+        villageScanPageRetry = 0
+        villageScanDataRetry = 0
+        villageScanScrollPass = 0
+        villageScanCollectedTargets.clear()
+        villageScanCollectedLinks.clear()
+        villageScanCollectInFlight = false
+        resourceSnapshots.clear()
+        villageMinLevels.clear()
+        pendingUsername = ""
+        pendingPassword = ""
+        loginInProgress = false
+        reloginRequested = false
+        farmListRequested = false
+        logoutCleanupInProgress = false
+
+        if (::villageChecklist.isInitialized) villageChecklist.removeAllViews()
+        if (::capacityOverview.isInitialized) capacityOverview.removeAllViews()
+        if (::capacityStatus.isInitialized) {
+            capacityStatus.text = "Belum ada data resource. Tekan REFRESH VILLAGE untuk membaca semua village."
+        }
+        if (::villageDatabaseView.isInitialized) villageDatabaseView.text = "DATABASE VILLAGE: kosong"
+        if (::refreshVillageLinkPreview.isInitialized) refreshVillageLinkPreview.text = "REFRESH VILLAGE LINK: -"
+        if (::resourceBuilderVillageLinkPreview.isInitialized) resourceBuilderVillageLinkPreview.text = "RES BUILDER LINK: -"
+
+        usernameInput.setText("")
+        passwordInput.setText("")
+        status.text = "Status: LOGOUT"
+        farmStatus.text = "Logout berhasil — semua data aplikasi dihapus."
+        nextRun.text = "Next run: --"
+        updateBotToggleVisual(false)
+        botToggle.setOnCheckedChangeListener(null)
+        botToggle.isChecked = false
+        botToggle.setOnCheckedChangeListener(this@MainActivity::handleBotToggle)
+        setSelectionControlsLocked(false)
+
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.removeAllCookies {
+            cookieManager.flush()
+            runOnUiThread {
+                runCatching { webView.stopLoading() }
+                runCatching { webView.clearCache(true) }
+                runCatching { webView.clearHistory() }
+                runCatching { webView.clearFormData() }
+                runCatching { android.webkit.WebStorage.getInstance().deleteAllData() }
+            }
+        }
+        cookieManager.flush()
+        clearActivityLog()
+    }
+
     private fun clearVillageDatabaseOnLogout(url: String) {
         val prefs = getSharedPreferences("config", MODE_PRIVATE)
         val raw = prefs.getString(villageDataPrefsKey, "[]").orEmpty()
@@ -1199,7 +1221,7 @@ class MainActivity : Activity() {
                             const clickable = node?.closest?.('a,button,[role="button"],input,select,summary') || node;
                             if (!clickable) return;
 
-                            const isTravianLogout = clickable.id === 'button6aa8a989ac75e' ||
+                            const isTravianLogout = clickable.id === 'button6aaa328d7a848' ||
                                 (clickable.matches?.('a.logout') && /auth\/logout/i.test(clickable.getAttribute('onclick') || ''));
                             if (isTravianLogout) {
                                 try { AndroidFarm.onTravianLogoutClick(); } catch (_) {}
@@ -2724,8 +2746,12 @@ class MainActivity : Activity() {
         fun onTravianLogoutClick() {
             debugTrace("ENTER onTravianLogoutClick")
             runOnUiThread {
-                clearVillageDatabaseOnLogout("Travian logout DOM")
-                logEvent("LOGOUT DOM diklik — database village dihapus")
+                if (logoutCleanupInProgress) {
+                    logEvent("LOGOUT DOM diklik — menunggu cleanup utama")
+                } else {
+                    clearVillageDatabaseOnLogout("Travian logout DOM")
+                    logEvent("LOGOUT DOM diklik — database village dihapus")
+                }
             }
         }
 

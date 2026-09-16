@@ -61,6 +61,10 @@ class FarmAutomationService : Service() {
             instanceRef?.get()?.handleVillageListResult(result)
         }
 
+        fun requestTravianLogout() {
+            instanceRef?.get()?.requestTravianLogoutInternal()
+        }
+
         fun onVisibleWebViewDetached() {
             instanceRef?.get()?.onVisibleWebViewDetachedInternal()
         }
@@ -621,6 +625,24 @@ class FarmAutomationService : Service() {
                 scheduleVillageRefreshForNextRun(savedCountdownStartedAt)
             }
         }, 800L)
+    }
+
+    private fun requestTravianLogoutInternal() {
+        debugTrace("ENTER requestTravianLogoutInternal")
+        handler.post {
+            val js = """
+                (() => {
+                    try {
+                        const el = document.querySelector(
+                            'a.layoutButton.logout[onclick*="auth/logout"], a#button6aaa328d7a848'
+                        );
+                        if (el) { el.click(); return 'clicked'; }
+                        return 'not_found';
+                    } catch (e) { return 'error'; }
+                })();
+            """.trimIndent()
+            automationWebView()?.evaluateJavascript(js, null)
+        }
     }
 
     private fun automationWebView(): WebView? {
