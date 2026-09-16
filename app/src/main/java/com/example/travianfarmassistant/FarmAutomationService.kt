@@ -1819,7 +1819,8 @@ class FarmAutomationService : Service() {
                 saveVillageDataRecordsForService(records)
 
                 if (validResourceTarget) {
-                    logEvent("Village $expectedName Updated min L$minLevel")
+                    //logEvent("Village $expectedName Updated min L$minLevel")
+                    logEvent("Village $expectedName Updated min Lvl $minLevel - id=${resourceId.toString()}&gid=${resourceGid.toString()}")
                 } else {
                     logEvent("Village $expectedName Updated min L$minLevel — Resource Builder target selesai; database tetap disimpan")
                 }
