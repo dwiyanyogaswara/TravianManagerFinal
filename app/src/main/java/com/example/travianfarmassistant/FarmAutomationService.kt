@@ -2462,7 +2462,7 @@ private fun clickTransferSelected() {
         }
 
         builderVillages = records
-            .filter { it.isChecklist && it.linkTown.trim().isNotBlank() && it.linkTown.trim() != "-" }
+            .filter { it.linkTown.trim().isNotBlank() && it.linkTown.trim() != "-" }
             .map { it.id to it.namaVillage }
             .distinctBy { it.first }
             .toMutableList()
