@@ -1810,7 +1810,8 @@ class FarmAutomationService : Service() {
                 records[pos] = old.copy(
                     namaVillage = json.optString("name").trim().ifBlank { expectedName },
                     linkVillage = "$server/dorf1.php?newdid=$expectedId",
-                    linkResource = if (validResourceTarget) href else "",
+                    //linkResource = if (validResourceTarget) href else "",
+                    linkResource = if (validResourceTarget) "$server/build.php?id=${resourceId.toString()}&gid=${resourceGid.toString()}" else "",
                     resourceId = if (validResourceTarget) resourceId.toString() else "",
                     resourceGid = if (validResourceTarget) resourceGid.toString() else "",
                     minLvl = minLevel
