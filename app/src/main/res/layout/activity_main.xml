@@ -20,7 +20,7 @@
             android:layout_weight="1"/>
         <Button
             android:id="@+id/capacityTabButton"
-            android:text="📊 Capacity Overview"
+            android:text="📊 Capacity"
             android:backgroundTint="#1565C0"
             android:textColor="#FFFFFF"
             android:textSize="12sp"
@@ -29,7 +29,7 @@
             android:layout_weight="1"/>
         <Button
             android:id="@+id/dbTabButton"
-            android:text="🗄 DB Overview"
+            android:text="🗄 Database"
             android:backgroundTint="#455A64"
             android:textColor="#FFFFFF"
             android:textSize="12sp"
