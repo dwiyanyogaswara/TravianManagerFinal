@@ -1052,7 +1052,13 @@ class MainActivity : Activity() {
             "$townServer/build.php?id=35&gid=19" to "Barracks",
             "$townServer/build.php?id=38&gid=20" to "Stable",
             "$townServer/build.php?id=23&gid=22" to "Academy",
-            "$townServer/build.php?id=40&gid=31" to "City Wall"
+            "$townServer/build.php?id=40&gid=31" to "City Wall",
+            "$townServer/build.php?id=25&gid=41" to "Residence",
+            "$townServer/build.php?id=33&gid=13" to "Smithy",
+            "$townServer/build.php?id=30&gid=24" to "Town Hall",
+            "$townServer/build.php?id=34&gid=37" to "Hero's Mansion",
+            "$townServer/build.php?id=20&gid=23" to "Cranny",
+            "$townServer/build.php?id=36&gid=21" to "Workshop"
         )
 
         loadedVillages.entries.toList().forEach { (id, name) ->
