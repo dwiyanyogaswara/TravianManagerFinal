@@ -3004,9 +3004,12 @@ private fun clickTransferSelected() {
     private fun clickTownUpgrade() {
         if (!running || !townBuilderInProgress) return
 
-        // Town Builder: cari kontrol Upgrade lebih fleksibel karena pada beberapa
-        // halaman Travian teks "Upgrade to ..." berada di child span/div,
-        // sedangkan elemen yang menerima click adalah parent/wrapper-nya.
+        // Town Builder pada halaman Travian menggunakan tombol seperti:
+        // <button type="button" value="Upgrade to level 2"
+        //         class="textButtonV1 green build"
+        //         onclick="... window.location.href = '/dorf2.php?...'; ...">
+        // Jadi prioritaskan selector tersebut secara langsung. Jangan hanya
+        // mengandalkan href karena button ini memang tidak mempunyai href.
         val js = """
             (() => {
                 const visible = el => {
@@ -3016,101 +3019,111 @@ private fun clickTransferSelected() {
                     return s.display !== 'none' && s.visibility !== 'hidden' &&
                            s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const norm = x => String(x || '').replace(/\s+/g, ' ').trim().toLowerCase();
-                const controlSelector = 'a,button,input[type=submit],input[type=button],[role=button]';
 
-                const textOf = el => norm(
-                    el?.innerText || el?.textContent || el?.value || el?.title ||
-                    el?.getAttribute?.('aria-label') || ''
-                );
+                const norm = value => String(value || '').replace(/\s+/g, ' ').trim();
+                const lower = value => norm(value).toLowerCase();
 
-                const safeClickable = el => {
-                    if (!el || !visible(el)) return null;
-                    if (el.disabled || el.getAttribute('aria-disabled') === 'true') return null;
-                    const txt = textOf(el);
-                    const cls = String(el.className || '').toLowerCase();
-                    const href = String(el.getAttribute('href') || '').toLowerCase();
-                    if (/cancel|demolish|destroy|remove/.test(txt + ' ' + cls)) return null;
-                    if (/upgrade\s+to\s+(?:level\s*)?\d+|upgrade\s+to\s+level|^upgrade$|^build$/i.test(txt)) return el;
-                    if (/\b(?:green|build|upgrade)\b/.test(cls) &&
-                        (/build|upgrade/.test(txt) || /build\.php/.test(href))) return el;
-                    if (/build\.php/.test(href) && /(?:upgrade|build)/.test(txt + ' ' + cls)) return el;
-                    return null;
+                const isUpgradeText = value =>
+                    /^(?:upgrade\s+to(?:\s+level)?(?:\s+\d+)?|upgrade)$/i.test(norm(value));
+
+                const isBad = el => {
+                    const all = lower(
+                        (el?.innerText || '') + ' ' +
+                        (el?.textContent || '') + ' ' +
+                        (el?.value || '') + ' ' +
+                        (el?.className || '')
+                    );
+                    return /cancel|demolish|destroy|remove/.test(all);
                 };
 
-                // 1. Prioritaskan kontrol clickable yang memang memiliki teks Upgrade.
-                let controls = [...document.querySelectorAll(controlSelector)]
-                    .filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
-                let btn = controls.map(safeClickable).find(Boolean);
+                // 1. Exact Travian Town Builder button.
+                // This matches the DOM supplied by the user:
+                // button.textButtonV1.green.build[value="Upgrade to level 2"]
+                const exactButtons = [...document.querySelectorAll(
+                    'button.textButtonV1.green.build, button.green.build, button.build'
+                )].filter(el =>
+                    visible(el) && !el.disabled &&
+                    el.getAttribute('aria-disabled') !== 'true' && !isBad(el)
+                );
 
-                // 2. Jika teks berada pada child span/div, cari parent clickable terdekat.
+                let btn = exactButtons.find(el =>
+                    isUpgradeText(el.getAttribute('value')) ||
+                    isUpgradeText(el.innerText) ||
+                    isUpgradeText(el.textContent)
+                );
+
+                // 2. Fallback: any button whose visible text/value is Upgrade to...
                 if (!btn) {
-                    const textNodes = [...document.querySelectorAll('body *')]
-                        .filter(el => visible(el))
-                        .filter(el => {
-                            const txt = textOf(el);
-                            return /upgrade\s+to\s+(?:level\s*)?\d+|upgrade\s+to\s+level|^upgrade$|^build$/i.test(txt);
-                        });
+                    const controls = [...document.querySelectorAll(
+                        'button,a,input[type=submit],input[type=button],[role=button]'
+                    )].filter(el =>
+                        visible(el) && !el.disabled &&
+                        el.getAttribute('aria-disabled') !== 'true' && !isBad(el)
+                    );
 
-                    for (const el of textNodes) {
-                        const parent = el.closest(controlSelector);
-                        if (safeClickable(parent)) {
-                            btn = parent;
-                            break;
-                        }
-
-                        // Beberapa template Travian memakai wrapper dengan onclick/href.
-                        let p = el;
-                        for (let i = 0; i < 5 && p; i++, p = p.parentElement) {
-                            if (!visible(p)) continue;
-                            const href = String(p.getAttribute?.('href') || '').toLowerCase();
-                            const onclick = String(p.getAttribute?.('onclick') || '').toLowerCase();
-                            const cls = String(p.className || '').toLowerCase();
-                            if ((href && /build\.php/.test(href)) ||
-                                onclick.includes('build') ||
-                                (/\b(?:green|build|upgrade)\b/.test(cls) && /upgrade|build/.test(textOf(p)))) {
-                                btn = p;
-                                break;
-                            }
-                        }
-                        if (btn) break;
-                    }
+                    btn = controls.find(el => {
+                        const text = norm(
+                            el.innerText || el.textContent || el.value ||
+                            el.getAttribute('aria-label') || el.title || ''
+                        );
+                        return /upgrade\s+to(?:\s+level)?(?:\s+\d+)?/i.test(text) ||
+                               /^upgrade$/i.test(text);
+                    });
                 }
 
                 if (!btn) return 'not-found';
 
                 btn.scrollIntoView({block:'center', inline:'center'});
-                const href = btn.getAttribute('href') || '';
-                const label = textOf(btn);
 
-                if (href && /build\.php/i.test(href)) {
-                    window.location.href = href;
-                    return 'navigated:' + label;
-                }
+                const label = norm(
+                    btn.getAttribute('value') || btn.innerText || btn.textContent || 'Upgrade'
+                );
+                const onclick = String(btn.getAttribute('onclick') || '');
+
+                // Travian's actual button contains window.location.href in onclick.
+                // Keep this as a fallback in case HTMLElement.click() is intercepted.
+                const match = onclick.match(/window\\.location\\.href\s*=\s*['\"]([^'\"]+)['\"]/i);
+                const target = match ? match[1].replace(/&amp;/g, '&') : '';
 
                 try {
                     btn.click();
                 } catch (e) {
-                    try {
-                        btn.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
-                    } catch (_) {
-                        return 'click-error';
+                    if (target) {
+                        window.location.href = target;
+                        return 'navigated-fallback:' + label;
                     }
+                    return 'click-error:' + label;
                 }
-                return 'clicked:' + label;
+
+                // If the click did not start navigation synchronously, use the
+                // exact URL from onclick as a deterministic fallback.
+                if (target && window.location.href.indexOf(target) === -1) {
+                    setTimeout(() => {
+                        try {
+                            if (window.location.href.indexOf(target) === -1) {
+                                window.location.href = target;
+                            }
+                        } catch (_) {}
+                    }, 250);
+                }
+
+                return 'clicked:' + label + (target ? '|target:' + target : '');
             })();
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val name = builderVillages.getOrNull(builderVillageIndex)?.second
+                ?: "Village ${builderVillageIndex + 1}"
+
             if (result.startsWith("clicked") || result.startsWith("navigated")) {
-                val name = builderVillages.getOrNull(builderVillageIndex)?.second
-                    ?: "Village ${builderVillageIndex + 1}"
                 builderStage = "TOWN_ADVANCING"
-                logEvent("Town Village $name Upgrade Success")
-                handler.postDelayed({ advanceTownBuilderVillage() }, 1200L)
+                logEvent("Town Village $name Upgrade Success — $result")
+                handler.postDelayed({ advanceTownBuilderVillage() }, 1500L)
             } else {
-                // Jika Upgrade memang belum tersedia, pertahankan jalur Hero Transfer.
+                // Upgrade benar-benar tidak ditemukan. Baru setelah itu
+                // gunakan jalur Hero Transfer yang lama.
+                logEvent("Town Builder: tombol Upgrade tidak ditemukan ($result) — masuk jalur Hero Transfer")
                 inventoryUseAttempt = 0
                 pendingUpgradeUrl = automationWebView()?.url.orEmpty().ifBlank { pendingUpgradeUrl }
                 clickRedResourceForTransfer()
