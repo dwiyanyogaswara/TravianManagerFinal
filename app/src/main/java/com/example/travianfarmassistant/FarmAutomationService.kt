@@ -3003,29 +3003,116 @@ private fun clickTransferSelected() {
 
     private fun clickTownUpgrade() {
         if (!running || !townBuilderInProgress) return
+
+        // Town Builder: cari kontrol Upgrade lebih fleksibel karena pada beberapa
+        // halaman Travian teks "Upgrade to ..." berada di child span/div,
+        // sedangkan elemen yang menerima click adalah parent/wrapper-nya.
         val js = """
             (() => {
-                const visible = el => { if (!el) return false; const s=getComputedStyle(el),r=el.getBoundingClientRect(); return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0; };
-                const norm = x => String(x||'').replace(/\\s+/g,' ').trim().toLowerCase();
-                const all=[...document.querySelectorAll('button,a,input[type=submit],input[type=button],[role=button]')].filter(el=>visible(el)&&!el.disabled);
-                const btn=all.find(el=>/upgrade\\s+to\\s+level|^upgrade$|^build$/i.test(norm(el.innerText||el.textContent||el.value||el.title||el.getAttribute('aria-label')||''))) || all.find(el=>/upgrade|build/i.test(norm(el.innerText||el.textContent||el.value||'')));
-                if(!btn) return 'not-found';
-                btn.scrollIntoView({block:'center'});
-                const href=btn.getAttribute('href')||'';
-                if(href && /build\\.php/i.test(href)){ window.location.href=href; return 'navigated'; }
-                btn.click(); return 'clicked';
+                const visible = el => {
+                    if (!el) return false;
+                    const s = getComputedStyle(el);
+                    const r = el.getBoundingClientRect();
+                    return s.display !== 'none' && s.visibility !== 'hidden' &&
+                           s.opacity !== '0' && r.width > 0 && r.height > 0;
+                };
+                const norm = x => String(x || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                const controlSelector = 'a,button,input[type=submit],input[type=button],[role=button]';
+
+                const textOf = el => norm(
+                    el?.innerText || el?.textContent || el?.value || el?.title ||
+                    el?.getAttribute?.('aria-label') || ''
+                );
+
+                const safeClickable = el => {
+                    if (!el || !visible(el)) return null;
+                    if (el.disabled || el.getAttribute('aria-disabled') === 'true') return null;
+                    const txt = textOf(el);
+                    const cls = String(el.className || '').toLowerCase();
+                    const href = String(el.getAttribute('href') || '').toLowerCase();
+                    if (/cancel|demolish|destroy|remove/.test(txt + ' ' + cls)) return null;
+                    if (/upgrade\s+to\s+(?:level\s*)?\d+|upgrade\s+to\s+level|^upgrade$|^build$/i.test(txt)) return el;
+                    if (/\b(?:green|build|upgrade)\b/.test(cls) &&
+                        (/build|upgrade/.test(txt) || /build\.php/.test(href))) return el;
+                    if (/build\.php/.test(href) && /(?:upgrade|build)/.test(txt + ' ' + cls)) return el;
+                    return null;
+                };
+
+                // 1. Prioritaskan kontrol clickable yang memang memiliki teks Upgrade.
+                let controls = [...document.querySelectorAll(controlSelector)]
+                    .filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+                let btn = controls.map(safeClickable).find(Boolean);
+
+                // 2. Jika teks berada pada child span/div, cari parent clickable terdekat.
+                if (!btn) {
+                    const textNodes = [...document.querySelectorAll('body *')]
+                        .filter(el => visible(el))
+                        .filter(el => {
+                            const txt = textOf(el);
+                            return /upgrade\s+to\s+(?:level\s*)?\d+|upgrade\s+to\s+level|^upgrade$|^build$/i.test(txt);
+                        });
+
+                    for (const el of textNodes) {
+                        const parent = el.closest(controlSelector);
+                        if (safeClickable(parent)) {
+                            btn = parent;
+                            break;
+                        }
+
+                        // Beberapa template Travian memakai wrapper dengan onclick/href.
+                        let p = el;
+                        for (let i = 0; i < 5 && p; i++, p = p.parentElement) {
+                            if (!visible(p)) continue;
+                            const href = String(p.getAttribute?.('href') || '').toLowerCase();
+                            const onclick = String(p.getAttribute?.('onclick') || '').toLowerCase();
+                            const cls = String(p.className || '').toLowerCase();
+                            if ((href && /build\.php/.test(href)) ||
+                                onclick.includes('build') ||
+                                (/\b(?:green|build|upgrade)\b/.test(cls) && /upgrade|build/.test(textOf(p)))) {
+                                btn = p;
+                                break;
+                            }
+                        }
+                        if (btn) break;
+                    }
+                }
+
+                if (!btn) return 'not-found';
+
+                btn.scrollIntoView({block:'center', inline:'center'});
+                const href = btn.getAttribute('href') || '';
+                const label = textOf(btn);
+
+                if (href && /build\.php/i.test(href)) {
+                    window.location.href = href;
+                    return 'navigated:' + label;
+                }
+
+                try {
+                    btn.click();
+                } catch (e) {
+                    try {
+                        btn.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+                    } catch (_) {
+                        return 'click-error';
+                    }
+                }
+                return 'clicked:' + label;
             })();
         """.trimIndent()
+
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result=raw.orEmpty().trim('"').replace("\\\"", "\"")
-            if(result.contains("clicked") || result.contains("navigated")){
-                val name=builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex+1}"
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            if (result.startsWith("clicked") || result.startsWith("navigated")) {
+                val name = builderVillages.getOrNull(builderVillageIndex)?.second
+                    ?: "Village ${builderVillageIndex + 1}"
                 builderStage = "TOWN_ADVANCING"
                 logEvent("Town Village $name Upgrade Success")
-                handler.postDelayed({ advanceTownBuilderVillage() },1200L)
+                handler.postDelayed({ advanceTownBuilderVillage() }, 1200L)
             } else {
-                inventoryUseAttempt=0
-                pendingUpgradeUrl=automationWebView()?.url.orEmpty().ifBlank { pendingUpgradeUrl }
+                // Jika Upgrade memang belum tersedia, pertahankan jalur Hero Transfer.
+                inventoryUseAttempt = 0
+                pendingUpgradeUrl = automationWebView()?.url.orEmpty().ifBlank { pendingUpgradeUrl }
                 clickRedResourceForTransfer()
             }
         }
