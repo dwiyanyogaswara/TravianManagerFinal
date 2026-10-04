@@ -984,7 +984,7 @@ class FarmAutomationService : Service() {
                             return JSON.stringify({ok: currentId === expected, currentId, activeId, urlId});
                         })();
                     """.trimIndent()) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
                         val currentId = Regex("\"currentId\":\"(\\d*)\"").find(result)
                             ?.groupValues?.getOrNull(1).orEmpty()
                         if (result.contains("\"ok\":true")) {
@@ -1238,7 +1238,7 @@ class FarmAutomationService : Service() {
             })();
         """.trimIndent()
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
             if (result.contains("\"state\":\"clicked\"")) {
                 pendingStartAll = false
                 startAllAttempt = 0
@@ -1301,7 +1301,7 @@ class FarmAutomationService : Service() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
             val after = Regex("\"totalAfter\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull()
                 ?: raidCountBeforeStartAll
             val difference = after - raidCountBeforeStartAll
@@ -1357,7 +1357,7 @@ class FarmAutomationService : Service() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
             val current = Regex("\"total\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val ready = Regex("\"ready\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val busy = Regex("\"busy\":(true|false)").find(result)?.groupValues?.get(1) == "true"
@@ -1430,7 +1430,7 @@ class FarmAutomationService : Service() {
             })();
         """.trimIndent()
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
             val clicked = Regex("\"clicked\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             farmListBeforeReady = Regex("\"readyBefore\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             raidCountBeforeStartAll = Regex("\"totalBefore\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
@@ -1469,7 +1469,7 @@ class FarmAutomationService : Service() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
             val current = Regex("\"total\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val wrappers = Regex("\"wrappers\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val busy = Regex("\"busy\":(true|false)").find(result)?.groupValues?.get(1) == "true"
@@ -1788,7 +1788,7 @@ class FarmAutomationService : Service() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
             val json = runCatching { JSONObject(result) }.getOrNull()
             villageRefreshInspectInFlight = false
 
@@ -2083,7 +2083,7 @@ class FarmAutomationService : Service() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
 
             if (result.contains("\"state\":\"upgrade_available\"")) {
                 logEvent(if (townBuilderInProgress) "Town Builder: 'Upgrade to level' ditemukan — langsung klik Upgrade" else "Resource Builder: halaman mengandung teks 'Upgrade to level' — langsung klik Upgrade")
@@ -2328,7 +2328,7 @@ private fun clickTransferSelected() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
 
             if (result.contains("\"state\":\"clicked\"")) {
                 logEvent(if (townBuilderInProgress) "Town Builder: Transfer Selected diklik — tunggu popup" else "Resource Builder: Transfer selected DIKLIK — menunggu popup memproses transfer")
@@ -2389,7 +2389,7 @@ private fun clickTransferSelected() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
 
             if (result.contains("\"stillThere\":false")) {
                 logEvent(if (townBuilderInProgress) "Town Builder: Transfer Selected selesai — tunggu 2 detik lalu cek Upgrade lagi" else "Resource Builder: Transfer Selected selesai — tunggu 2 detik lalu cek Upgrade lagi")
@@ -2730,7 +2730,7 @@ private fun clickTransferSelected() {
                 })();
             """.trimIndent()
             automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
 
                 val holdFound = Regex("\\\"holdCount\\\":(\\d+)").find(result)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
                 val exchangeFound = Regex("\\\"exchangeCount\\\":(\\d+)").find(result)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
@@ -2901,7 +2901,7 @@ private fun clickTransferSelected() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
 
             if (result.contains("\"state\":\"clicked\"")) {
                 handler.postDelayed({
@@ -2953,7 +2953,7 @@ private fun clickTransferSelected() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
 
             val stillThere = result.contains("\"stillThere\":true")
             if (stillThere) {
@@ -3086,7 +3086,7 @@ private fun clickTransferSelected() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
             val name = builderVillages.getOrNull(builderVillageIndex)?.second
                 ?: "Village ${builderVillageIndex + 1}"
 
@@ -3173,7 +3173,7 @@ private fun clickTransferSelected() {
             })();
         """.trimIndent()
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
             when {
                 result.contains("no_item") -> {
                     logEvent("Resource Builder: item resource Hero tidak ditemukan untuk kebutuhan ${pendingUpgradeCosts.joinToString(",")}")
@@ -3228,7 +3228,7 @@ private fun clickTransferSelected() {
             })();
         """.trimIndent()
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
             when {
                 result == "confirmed" -> {
                     logEvent("Resource Builder: resource Hero digunakan (${pendingUpgradeCosts.joinToString(",")})")
@@ -3329,7 +3329,7 @@ private fun clickTransferSelected() {
             })();
         """.trimIndent()
         automationWebView()?.evaluateJavascript(videoJs) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
             if (result.startsWith("video-clicked:")) {
                 pendingUpgradeUrl = ""
                 pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
