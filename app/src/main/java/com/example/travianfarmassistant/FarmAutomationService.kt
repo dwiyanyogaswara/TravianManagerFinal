@@ -984,7 +984,7 @@ class FarmAutomationService : Service() {
                             return JSON.stringify({ok: currentId === expected, currentId, activeId, urlId});
                         })();
                     """.trimIndent()) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
                         val currentId = Regex("\"currentId\":\"(\\d*)\"").find(result)
                             ?.groupValues?.getOrNull(1).orEmpty()
                         if (result.contains("\"ok\":true")) {
@@ -1238,7 +1238,7 @@ class FarmAutomationService : Service() {
             })();
         """.trimIndent()
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
             if (result.contains("\"state\":\"clicked\"")) {
                 pendingStartAll = false
                 startAllAttempt = 0
@@ -1301,7 +1301,7 @@ class FarmAutomationService : Service() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
             val after = Regex("\"totalAfter\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull()
                 ?: raidCountBeforeStartAll
             val difference = after - raidCountBeforeStartAll
@@ -1357,7 +1357,7 @@ class FarmAutomationService : Service() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
             val current = Regex("\"total\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val ready = Regex("\"ready\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val busy = Regex("\"busy\":(true|false)").find(result)?.groupValues?.get(1) == "true"
@@ -1430,7 +1430,7 @@ class FarmAutomationService : Service() {
             })();
         """.trimIndent()
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
             val clicked = Regex("\"clicked\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             farmListBeforeReady = Regex("\"readyBefore\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             raidCountBeforeStartAll = Regex("\"totalBefore\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
@@ -1469,7 +1469,7 @@ class FarmAutomationService : Service() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
             val current = Regex("\"total\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val wrappers = Regex("\"wrappers\":(\\d+)").find(result)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val busy = Regex("\"busy\":(true|false)").find(result)?.groupValues?.get(1) == "true"
@@ -1788,7 +1788,7 @@ class FarmAutomationService : Service() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
             val json = runCatching { JSONObject(result) }.getOrNull()
             villageRefreshInspectInFlight = false
 
@@ -2083,7 +2083,7 @@ class FarmAutomationService : Service() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
 
             if (result.contains("\"state\":\"upgrade_available\"")) {
                 logEvent(if (townBuilderInProgress) "Town Builder: 'Upgrade to level' ditemukan — langsung klik Upgrade" else "Resource Builder: halaman mengandung teks 'Upgrade to level' — langsung klik Upgrade")
@@ -2328,7 +2328,7 @@ private fun clickTransferSelected() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
 
             if (result.contains("\"state\":\"clicked\"")) {
                 logEvent(if (townBuilderInProgress) "Town Builder: Transfer Selected diklik — tunggu popup" else "Resource Builder: Transfer selected DIKLIK — menunggu popup memproses transfer")
@@ -2389,7 +2389,7 @@ private fun clickTransferSelected() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
 
             if (result.contains("\"stillThere\":false")) {
                 logEvent(if (townBuilderInProgress) "Town Builder: Transfer Selected selesai — tunggu 2 detik lalu cek Upgrade lagi" else "Resource Builder: Transfer Selected selesai — tunggu 2 detik lalu cek Upgrade lagi")
@@ -2730,7 +2730,7 @@ private fun clickTransferSelected() {
                 })();
             """.trimIndent()
             automationWebView()?.evaluateJavascript(js) { raw ->
-                val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
 
                 val holdFound = Regex("\\\"holdCount\\\":(\\d+)").find(result)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
                 val exchangeFound = Regex("\\\"exchangeCount\\\":(\\d+)").find(result)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
@@ -2901,7 +2901,7 @@ private fun clickTransferSelected() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
 
             if (result.contains("\"state\":\"clicked\"")) {
                 handler.postDelayed({
@@ -2953,7 +2953,7 @@ private fun clickTransferSelected() {
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
 
             val stillThere = result.contains("\"stillThere\":true")
             if (stillThere) {
@@ -3004,12 +3004,11 @@ private fun clickTransferSelected() {
     private fun clickTownUpgrade() {
         if (!running || !townBuilderInProgress) return
 
-        // Town Builder pada halaman Travian menggunakan tombol seperti:
-        // <button type="button" value="Upgrade to level 2"
-        //         class="textButtonV1 green build"
-        //         onclick="... window.location.href = '/dorf2.php?...'; ...">
-        // Jadi prioritaskan selector tersebut secara langsung. Jangan hanya
-        // mengandalkan href karena button ini memang tidak mempunyai href.
+        // Town Builder memakai fitur video Travian "Upgrade 25% faster".
+        // DOM: button.textButtonV1.purple.build.videoFeatureButton
+        // value="Upgrade ... 25% ... faster"
+        // onclick="useBuildingVideoFeature('/dorf2.php?...', undefined); ..."
+        // Setelah berhasil diklik, tunggu 40 detik sebelum lanjut village.
         val js = """
             (() => {
                 const visible = el => {
@@ -3020,110 +3019,90 @@ private fun clickTransferSelected() {
                            s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
 
-                const norm = value => String(value || '').replace(/\s+/g, ' ').trim();
-                const lower = value => norm(value).toLowerCase();
+                // Travian menyisipkan karakter bidi di antara "Upgrade" dan "25%".
+                const clean = value => String(value || '')
+                    .replace(/&(?:#x202d|#8237);/gi, '')
+                    .replace(/&(?:#x202c|#8236);/gi, '')
+                    .replace(/[\u202a-\u202e\u2066-\u2069]/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .toLowerCase();
 
-                const isUpgradeText = value =>
-                    /^(?:upgrade\s+to(?:\s+level)?(?:\s+\d+)?|upgrade)$/i.test(norm(value));
+                const textOf = el => clean(
+                    el?.innerText || el?.textContent || el?.value || el?.title ||
+                    el?.getAttribute?.('aria-label') || ''
+                );
 
-                const isBad = el => {
-                    const all = lower(
-                        (el?.innerText || '') + ' ' +
-                        (el?.textContent || '') + ' ' +
-                        (el?.value || '') + ' ' +
-                        (el?.className || '')
-                    );
-                    return /cancel|demolish|destroy|remove/.test(all);
+                const onclickOf = el => String(el?.getAttribute?.('onclick') || '').toLowerCase();
+
+                const isVideoUpgrade = el => {
+                    if (!el || !visible(el)) return false;
+                    if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+                    const cls = String(el.className || '').toLowerCase();
+                    const txt = textOf(el);
+                    const onclick = onclickOf(el);
+
+                    const hasVideoClass = cls.includes('videofeaturebutton');
+                    const hasPurpleBuildClass = cls.includes('purple') && cls.includes('build');
+                    const hasVideoFunction = onclick.includes('usebuildingvideofeature');
+                    const has25FasterText = /upgrade\s+.*25\s*%\s*faster/i.test(txt);
+
+                    return hasVideoFunction ||
+                           (hasVideoClass && hasPurpleBuildClass) ||
+                           (has25FasterText && (hasVideoClass || hasVideoFunction));
                 };
 
-                // 1. Exact Travian Town Builder button.
-                // This matches the DOM supplied by the user:
-                // button.textButtonV1.green.build[value="Upgrade to level 2"]
-                const exactButtons = [...document.querySelectorAll(
-                    'button.textButtonV1.green.build, button.green.build, button.build'
-                )].filter(el =>
-                    visible(el) && !el.disabled &&
-                    el.getAttribute('aria-disabled') !== 'true' && !isBad(el)
-                );
+                let btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
+                    .find(isVideoUpgrade);
 
-                let btn = exactButtons.find(el =>
-                    isUpgradeText(el.getAttribute('value')) ||
-                    isUpgradeText(el.innerText) ||
-                    isUpgradeText(el.textContent)
-                );
-
-                // 2. Fallback: any button whose visible text/value is Upgrade to...
+                // Fallback bila class berubah tetapi onclick/text masih sama.
                 if (!btn) {
-                    const controls = [...document.querySelectorAll(
-                        'button,a,input[type=submit],input[type=button],[role=button]'
-                    )].filter(el =>
-                        visible(el) && !el.disabled &&
-                        el.getAttribute('aria-disabled') !== 'true' && !isBad(el)
-                    );
-
-                    btn = controls.find(el => {
-                        const text = norm(
-                            el.innerText || el.textContent || el.value ||
-                            el.getAttribute('aria-label') || el.title || ''
-                        );
-                        return /upgrade\s+to(?:\s+level)?(?:\s+\d+)?/i.test(text) ||
-                               /^upgrade$/i.test(text);
-                    });
+                    btn = [...document.querySelectorAll('button, a, [role=button], input[type=button], input[type=submit]')]
+                        .find(isVideoUpgrade);
                 }
 
-                if (!btn) return 'not-found';
+                if (!btn) return 'video-not-found';
 
                 btn.scrollIntoView({block:'center', inline:'center'});
-
-                const label = norm(
-                    btn.getAttribute('value') || btn.innerText || btn.textContent || 'Upgrade'
-                );
+                const label = textOf(btn);
                 const onclick = String(btn.getAttribute('onclick') || '');
-
-                // Travian's actual button contains window.location.href in onclick.
-                // Keep this as a fallback in case HTMLElement.click() is intercepted.
-                const match = onclick.match(/window\\.location\\.href\s*=\s*['\"]([^'\"]+)['\"]/i);
-                const target = match ? match[1].replace(/&amp;/g, '&') : '';
 
                 try {
                     btn.click();
                 } catch (e) {
-                    if (target) {
-                        window.location.href = target;
-                        return 'navigated-fallback:' + label;
+                    try {
+                        btn.dispatchEvent(new MouseEvent('click', {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window
+                        }));
+                    } catch (_) {
+                        return 'video-click-error';
                     }
-                    return 'click-error:' + label;
                 }
 
-                // If the click did not start navigation synchronously, use the
-                // exact URL from onclick as a deterministic fallback.
-                if (target && window.location.href.indexOf(target) === -1) {
-                    setTimeout(() => {
-                        try {
-                            if (window.location.href.indexOf(target) === -1) {
-                                window.location.href = target;
-                            }
-                        } catch (_) {}
-                    }, 250);
-                }
-
-                return 'clicked:' + label + (target ? '|target:' + target : '');
+                return 'video-clicked:' + label + '|onclick=' + onclick;
             })();
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
             val name = builderVillages.getOrNull(builderVillageIndex)?.second
                 ?: "Village ${builderVillageIndex + 1}"
 
-            if (result.startsWith("clicked") || result.startsWith("navigated")) {
-                builderStage = "TOWN_ADVANCING"
-                logEvent("Town Village $name Upgrade Success — $result")
-                handler.postDelayed({ advanceTownBuilderVillage() }, 1500L)
+            if (result.startsWith("video-clicked:")) {
+                builderStage = "TOWN_VIDEO_WAIT"
+                logEvent("Town Village $name — Upgrade 25% faster berhasil diklik; tunggu 40 detik")
+                updateNotification("Town Builder — $name | Video 25% faster")
+
+                handler.postDelayed({
+                    if (!running || !townBuilderInProgress) return@postDelayed
+                    logEvent("Town Village $name — tunggu video selesai 40 detik selesai")
+                    advanceTownBuilderVillage()
+                }, 40_000L)
             } else {
-                // Upgrade benar-benar tidak ditemukan. Baru setelah itu
-                // gunakan jalur Hero Transfer yang lama.
-                logEvent("Town Builder: tombol Upgrade tidak ditemukan ($result) — masuk jalur Hero Transfer")
+                // Jika tombol video tidak tersedia, gunakan jalur Upgrade/Hero lama.
+                logEvent("Town Builder: tombol Upgrade 25% faster tidak ditemukan — gunakan Upgrade/Hero lama")
                 inventoryUseAttempt = 0
                 pendingUpgradeUrl = automationWebView()?.url.orEmpty().ifBlank { pendingUpgradeUrl }
                 clickRedResourceForTransfer()
@@ -3194,7 +3173,7 @@ private fun clickTransferSelected() {
             })();
         """.trimIndent()
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
             when {
                 result.contains("no_item") -> {
                     logEvent("Resource Builder: item resource Hero tidak ditemukan untuk kebutuhan ${pendingUpgradeCosts.joinToString(",")}")
@@ -3249,7 +3228,7 @@ private fun clickTransferSelected() {
             })();
         """.trimIndent()
         automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
             when {
                 result == "confirmed" -> {
                     logEvent("Resource Builder: resource Hero digunakan (${pendingUpgradeCosts.joinToString(",")})")
@@ -3289,43 +3268,69 @@ private fun clickTransferSelected() {
         }
 
         builderStage = "WAIT_UPGRADE"
-        val js = """
+
+        // Resource Builder juga memakai fitur video Travian "Upgrade 25% faster".
+        // Setelah tombol berhasil diklik, tunggu 40 detik sebelum lanjut ke village berikutnya.
+        val videoJs = """
             (() => {
                 const visible = el => {
                     if (!el) return false;
-                    const s = getComputedStyle(el), r = el.getBoundingClientRect();
-                    return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+                    const s = getComputedStyle(el);
+                    const r = el.getBoundingClientRect();
+                    return s.display !== 'none' && s.visibility !== 'hidden' &&
+                           s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const norm = s => (s || '').replace(/\s+/g,' ').trim().toLowerCase();
-                const root = document.querySelector('#build, #villageContent') || document.body;
-                const all = [...root.querySelectorAll('button,a,input[type=submit],input[type=button],[role=button]')];
-                const candidates = all.filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
-                const btn = candidates.find(el => {
-                    const text = norm(el.innerText || el.textContent || el.value || el.title || el.getAttribute('aria-label'));
-                    const cls = (el.className || '').toString().toLowerCase();
-                    const href = (el.getAttribute('href') || '').toLowerCase();
-                    if (/cancel|demolish|destroy|remove/.test(text + ' ' + cls)) return false;
-                    return /upgrade|upgrade to level|build/.test(text) ||
-                           /(?:^|\s)(green|build|upgrade)(?:\s|$)/.test(cls) ||
-                           /build\.php/.test(href);
-                }) || candidates.find(el => {
-                    const cls = (el.className || '').toString().toLowerCase();
-                    return /green/.test(cls) && /build|upgrade/.test(cls);
-                });
-                if (!btn) return 'not-found';
-                btn.scrollIntoView({block:'center'});
-                const href = btn.getAttribute('href') || '';
-                if (href && /build\.php/i.test(href)) {
-                    window.location.href = href;
-                    return 'navigated:' + href;
+                const clean = value => String(value || '')
+                    .replace(/&(?:#x202d|#8237);/gi, '')
+                    .replace(/&(?:#x202c|#8236);/gi, '')
+                    .replace(/[\u202a-\u202e\u2066-\u2069]/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .toLowerCase();
+                const textOf = el => clean(
+                    el?.innerText || el?.textContent || el?.value || el?.title ||
+                    el?.getAttribute?.('aria-label') || ''
+                );
+                const onclickOf = el => String(el?.getAttribute?.('onclick') || '').toLowerCase();
+                const isVideoUpgrade = el => {
+                    if (!el || !visible(el)) return false;
+                    if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+                    const cls = String(el.className || '').toLowerCase();
+                    const txt = textOf(el);
+                    const onclick = onclickOf(el);
+                    return onclick.includes('usebuildingvideofeature') ||
+                           (cls.includes('videofeaturebutton') && cls.includes('purple') && cls.includes('build')) ||
+                           (/upgrade\s+.*25\s*%\s*faster/i.test(txt) &&
+                            (cls.includes('videofeaturebutton') || onclick.includes('usebuildingvideofeature')));
+                };
+
+                let btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
+                    .find(isVideoUpgrade);
+                if (!btn) {
+                    btn = [...document.querySelectorAll('button, a, [role=button], input[type=button], input[type=submit]')]
+                        .find(isVideoUpgrade);
                 }
-                btn.click();
-                return 'clicked:' + (btn.innerText || btn.value || 'upgrade');
+                if (!btn) return 'video-not-found';
+
+                btn.scrollIntoView({block:'center', inline:'center'});
+                const label = textOf(btn);
+                try {
+                    btn.click();
+                } catch (e) {
+                    try {
+                        btn.dispatchEvent(new MouseEvent('click', {
+                            bubbles: true, cancelable: true, view: window
+                        }));
+                    } catch (_) {
+                        return 'video-click-error';
+                    }
+                }
+                return 'video-clicked:' + label;
             })();
         """.trimIndent()
-        automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
-            if (result.startsWith("clicked") || result.startsWith("navigated")) {
+        automationWebView()?.evaluateJavascript(videoJs) { raw ->
+            val result = raw.orEmpty().trim('"').replace("\\"", """)
+            if (result.startsWith("video-clicked:")) {
                 pendingUpgradeUrl = ""
                 pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
                 heroTransferCompleted = false
@@ -3333,9 +3338,15 @@ private fun clickTransferSelected() {
                 val villageLogId = builderVillages.getOrNull(builderVillageIndex)?.first.orEmpty()
                 val currentLevel = builderResourceLevels[villageLogId] ?: -1
                 val targetLevel = if (currentLevel >= 0) currentLevel + 1 else -1
-                if (targetLevel >= 0) logEvent("Village $villageLogName Upgrade to Level $targetLevel Success")
-                else logEvent("Village $villageLogName Upgrade Success")
-                handler.postDelayed({ goToNextBuilderVillage() }, 1200)
+                if (targetLevel >= 0) logEvent("Village $villageLogName Upgrade 25% faster to Level $targetLevel Success")
+                else logEvent("Village $villageLogName Upgrade 25% faster Success")
+                updateNotification("Resource Builder — $villageLogName | Video 25% faster")
+                builderStage = "RESOURCE_VIDEO_WAIT"
+                handler.postDelayed({
+                    if (!running || !builderInProgress || builderStage != "RESOURCE_VIDEO_WAIT") return@postDelayed
+                    logEvent("Village $villageLogName — tunggu video selesai 40 detik selesai")
+                    goToNextBuilderVillage()
+                }, 40_000L)
             } else if (builderAttempt < 5) {
                 builderAttempt++
                 handler.postDelayed({ inspectUpgradeResources() }, 900)
@@ -3346,6 +3357,7 @@ private fun clickTransferSelected() {
                 goToNextBuilderVillage()
             }
         }
+        return
     }
 
     private fun goToNextBuilderVillage() {
