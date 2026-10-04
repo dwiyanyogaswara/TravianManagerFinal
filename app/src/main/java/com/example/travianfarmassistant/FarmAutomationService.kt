@@ -3097,8 +3097,18 @@ private fun clickTransferSelected() {
 
                 handler.postDelayed({
                     if (!running || !townBuilderInProgress) return@postDelayed
-                    logEvent("Town Village $name — tunggu video selesai 40 detik selesai")
-                    advanceTownBuilderVillage()
+
+                    val afterUrl = automationWebView()?.url.orEmpty()
+                    val redirectSuccess = afterUrl.contains("/dorf2.php", ignoreCase = true)
+
+                    if (redirectSuccess) {
+                        logEvent("Town Village $name — redirect dorf2.php berhasil setelah 40 detik")
+                        logEvent("Town Village $name — Upgrade 25% faster Success")
+                        advanceTownBuilderVillage()
+                    } else {
+                        logEvent("Town Village $name — Upgrade 25% faster gagal; setelah 40 detik URL=$afterUrl")
+                        advanceTownBuilderVillage()
+                    }
                 }, 40_000L)
             } else {
                 // Jika tombol video tidak tersedia, gunakan jalur Upgrade/Hero lama.
@@ -3338,13 +3348,24 @@ private fun clickTransferSelected() {
                 val villageLogId = builderVillages.getOrNull(builderVillageIndex)?.first.orEmpty()
                 val currentLevel = builderResourceLevels[villageLogId] ?: -1
                 val targetLevel = if (currentLevel >= 0) currentLevel + 1 else -1
-                if (targetLevel >= 0) logEvent("Village $villageLogName Upgrade 25% faster to Level $targetLevel Success")
-                else logEvent("Village $villageLogName Upgrade 25% faster Success")
                 updateNotification("Resource Builder — $villageLogName | Video 25% faster")
                 builderStage = "RESOURCE_VIDEO_WAIT"
+                logEvent("Village $villageLogName — Upgrade 25% faster diklik; tunggu 40 detik")
                 handler.postDelayed({
                     if (!running || !builderInProgress || builderStage != "RESOURCE_VIDEO_WAIT") return@postDelayed
-                    logEvent("Village $villageLogName — tunggu video selesai 40 detik selesai")
+
+                    val afterUrl = automationWebView()?.url.orEmpty()
+                    val redirectSuccess = afterUrl.contains("/dorf.php", ignoreCase = true) &&
+                        !afterUrl.contains("/dorf2.php", ignoreCase = true)
+
+                    if (redirectSuccess) {
+                        if (targetLevel >= 0) logEvent("Village $villageLogName Upgrade 25% faster to Level $targetLevel Success")
+                        else logEvent("Village $villageLogName Upgrade 25% faster Success")
+                        logEvent("Village $villageLogName — redirect dorf.php berhasil setelah 40 detik")
+                    } else {
+                        logEvent("Village $villageLogName — Upgrade 25% faster gagal; setelah 40 detik URL=$afterUrl")
+                    }
+
                     goToNextBuilderVillage()
                 }, 40_000L)
             } else if (builderAttempt < 5) {
