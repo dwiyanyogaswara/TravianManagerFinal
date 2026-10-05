@@ -3004,101 +3004,129 @@ private fun clickTransferSelected() {
     private fun clickTownUpgrade() {
         if (!running || !townBuilderInProgress) return
 
-        // Travian video feature flow:
-        // Upgrade to Level ditemukan -> cari tombol value "Upgrade 25% faster"
-        // -> klik -> tunggu #videoArea benar-benar muncul -> tunggu redirect dorf2.php.
-        builderStage = "TOWN_VIDEO_FEATURE"
-        val name = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
-
-        logEvent("Town Builder: $name — mencari DOM tombol Upgrade 25% faster")
-
+        // Town Builder pada halaman Travian menggunakan tombol seperti:
+        // <button type="button" value="Upgrade to level 2"
+        //         class="textButtonV1 green build"
+        //         onclick="... window.location.href = '/dorf2.php?...'; ...">
+        // Jadi prioritaskan selector tersebut secara langsung. Jangan hanya
+        // mengandalkan href karena button ini memang tidak mempunyai href.
         val js = """
             (() => {
                 const visible = el => {
                     if (!el) return false;
-                    const s = getComputedStyle(el), r = el.getBoundingClientRect();
+                    const s = getComputedStyle(el);
+                    const r = el.getBoundingClientRect();
                     return s.display !== 'none' && s.visibility !== 'hidden' &&
                            s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const norm = v => String(v || '')
-                    .replace(/[\u200B-\u200D\uFEFF\u202A-\u202E]/g, '')
-                    .replace(/\s+/g, ' ')
-                    .trim();
 
-                const upgradeFound = /upgrade\s+to\s+level/i.test(
-                    String(document.body?.innerText || document.documentElement?.innerText || '')
-                        .replace(/\s+/g, ' ')
+                const norm = value => String(value || '').replace(/\s+/g, ' ').trim();
+                const lower = value => norm(value).toLowerCase();
+
+                const isUpgradeText = value =>
+                    /^(?:upgrade\s+to(?:\s+level)?(?:\s+\d+)?|upgrade)$/i.test(norm(value));
+
+                const isBad = el => {
+                    const all = lower(
+                        (el?.innerText || '') + ' ' +
+                        (el?.textContent || '') + ' ' +
+                        (el?.value || '') + ' ' +
+                        (el?.className || '')
+                    );
+                    return /cancel|demolish|destroy|remove/.test(all);
+                };
+
+                // 1. Exact Travian Town Builder button.
+                // This matches the DOM supplied by the user:
+                // button.textButtonV1.green.build[value="Upgrade to level 2"]
+                const exactButtons = [...document.querySelectorAll(
+                    'button.textButtonV1.green.build, button.green.build, button.build'
+                )].filter(el =>
+                    visible(el) && !el.disabled &&
+                    el.getAttribute('aria-disabled') !== 'true' && !isBad(el)
                 );
 
-                if (!upgradeFound) return 'upgrade-not-found';
+                let btn = exactButtons.find(el =>
+                    isUpgradeText(el.getAttribute('value')) ||
+                    isUpgradeText(el.innerText) ||
+                    isUpgradeText(el.textContent)
+                );
 
-                const buttons = [
-                    ...document.querySelectorAll('button[type="button"]'),
-                    ...document.querySelectorAll('input[type="button"]'),
-                    ...document.querySelectorAll('input[type="submit"]')
-                ].filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+                // 2. Fallback: any button whose visible text/value is Upgrade to...
+                if (!btn) {
+                    const controls = [...document.querySelectorAll(
+                        'button,a,input[type=submit],input[type=button],[role=button]'
+                    )].filter(el =>
+                        visible(el) && !el.disabled &&
+                        el.getAttribute('aria-disabled') !== 'true' && !isBad(el)
+                    );
 
-                const btn = buttons.find(el => {
-                    const value = norm(el.getAttribute('value'));
-                    const text = norm(el.innerText || el.textContent);
-                    return /upgrade\s*25\s*%\s*faster/i.test(value) ||
-                           /upgrade\s*25\s*%\s*faster/i.test(text);
-                });
+                    btn = controls.find(el => {
+                        const text = norm(
+                            el.innerText || el.textContent || el.value ||
+                            el.getAttribute('aria-label') || el.title || ''
+                        );
+                        return /upgrade\s+to(?:\s+level)?(?:\s+\d+)?/i.test(text) ||
+                               /^upgrade$/i.test(text);
+                    });
+                }
 
-                if (!btn) return 'button-not-found';
+                if (!btn) return 'not-found';
 
                 btn.scrollIntoView({block:'center', inline:'center'});
+
+                const label = norm(
+                    btn.getAttribute('value') || btn.innerText || btn.textContent || 'Upgrade'
+                );
+                const onclick = String(btn.getAttribute('onclick') || '');
+
+                // Travian's actual button contains window.location.href in onclick.
+                // Keep this as a fallback in case HTMLElement.click() is intercepted.
+                const match = onclick.match(/window\\.location\\.href\s*=\s*['\"]([^'\"]+)['\"]/i);
+                const target = match ? match[1].replace(/&amp;/g, '&') : '';
+
                 try {
                     btn.click();
-                    return 'clicked';
-                } catch (_) {
-                    try {
-                        btn.dispatchEvent(new MouseEvent('click', {
-                            bubbles:true, cancelable:true, view:window
-                        }));
-                        return 'clicked';
-                    } catch (_) {
-                        return 'click-error';
+                } catch (e) {
+                    if (target) {
+                        window.location.href = target;
+                        return 'navigated-fallback:' + label;
                     }
+                    return 'click-error:' + label;
                 }
+
+                // If the click did not start navigation synchronously, use the
+                // exact URL from onclick as a deterministic fallback.
+                if (target && window.location.href.indexOf(target) === -1) {
+                    setTimeout(() => {
+                        try {
+                            if (window.location.href.indexOf(target) === -1) {
+                                window.location.href = target;
+                            }
+                        } catch (_) {}
+                    }, 250);
+                }
+
+                return 'clicked:' + label + (target ? '|target:' + target : '');
             })();
         """.trimIndent()
 
         automationWebView()?.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
+            val name = builderVillages.getOrNull(builderVillageIndex)?.second
+                ?: "Village ${builderVillageIndex + 1}"
 
-            when (result) {
-                "clicked" -> {
-                    logEvent("Town Builder: $name — tombol Upgrade 25% faster DIKLIK")
-                    logEvent("Town Builder: $name — menunggu DOM #videoArea muncul")
-                    waitForVideoAreaThenRedirect(
-                        expectedPath = "dorf2.php",
-                        villageName = name,
-                        attempt = 0,
-                        maxVideoAttempts = 40
-                    )
-                }
-
-                "upgrade-not-found" -> {
-                    logEvent("Town Builder: $name — DOM 'Upgrade to Level' belum ditemukan; retry")
-                    handler.postDelayed({
-                        if (running && townBuilderInProgress) clickTownUpgrade()
-                    }, 1000L)
-                }
-
-                "button-not-found" -> {
-                    logEvent("Town Builder: $name — DOM 'Upgrade to Level' ditemukan, tetapi tombol 25% faster belum muncul; retry")
-                    handler.postDelayed({
-                        if (running && townBuilderInProgress) clickTownUpgrade()
-                    }, 1000L)
-                }
-
-                else -> {
-                    logEvent("Town Builder: $name — gagal klik tombol 25% faster ($result); retry")
-                    handler.postDelayed({
-                        if (running && townBuilderInProgress) clickTownUpgrade()
-                    }, 1000L)
-                }
+            if (result.startsWith("clicked") || result.startsWith("navigated")) {
+                builderStage = "TOWN_ADVANCING"
+                logEvent("Town Village $name Upgrade Success — $result")
+                handler.postDelayed({ advanceTownBuilderVillage() }, 1500L)
+            } else {
+                // Upgrade benar-benar tidak ditemukan. Baru setelah itu
+                // gunakan jalur Hero Transfer yang lama.
+                logEvent("Town Builder: tombol Upgrade tidak ditemukan ($result) — masuk jalur Hero Transfer")
+                inventoryUseAttempt = 0
+                pendingUpgradeUrl = automationWebView()?.url.orEmpty().ifBlank { pendingUpgradeUrl }
+                clickRedResourceForTransfer()
             }
         }
     }
@@ -3247,274 +3275,76 @@ private fun clickTransferSelected() {
             clickTownUpgrade()
             return
         }
+
         debugTrace("ENTER clickResourceUpgrade")
         if (!running || !builderInProgress) return
 
         val currentUrl = automationWebView()?.url.orEmpty()
         if (!currentUrl.contains("build.php", ignoreCase = true) ||
             currentUrl.contains("gid=16", ignoreCase = true)) {
-            logEvent("Resource Builder: halaman bukan resource build.php; URL=$currentUrl")
+            logEvent("Resource Builder: batal klik Upgrade karena bukan halaman resource build.php; URL=$currentUrl")
             builderStage = "OPEN_RESOURCE"
-            handler.postDelayed({ openSavedBuilderResource() }, 400L)
+            handler.postDelayed({ openSavedBuilderResource() }, 400)
             return
         }
 
-        builderStage = "RESOURCE_VIDEO_FEATURE"
-        val name = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
-
-        logEvent("Resource Builder: $name — mencari DOM tombol Upgrade 25% faster")
-
+        builderStage = "WAIT_UPGRADE"
         val js = """
             (() => {
                 const visible = el => {
                     if (!el) return false;
                     const s = getComputedStyle(el), r = el.getBoundingClientRect();
-                    return s.display !== 'none' && s.visibility !== 'hidden' &&
-                           s.opacity !== '0' && r.width > 0 && r.height > 0;
+                    return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0;
                 };
-                const norm = v => String(v || '')
-                    .replace(/[\u200B-\u200D\uFEFF\u202A-\u202E]/g, '')
-                    .replace(/\s+/g, ' ')
-                    .trim();
-
-                const upgradeFound = /upgrade\s+to\s+level/i.test(
-                    String(document.body?.innerText || document.documentElement?.innerText || '')
-                        .replace(/\s+/g, ' ')
-                );
-
-                if (!upgradeFound) return 'upgrade-not-found';
-
-                const buttons = [
-                    ...document.querySelectorAll('button[type="button"]'),
-                    ...document.querySelectorAll('input[type="button"]'),
-                    ...document.querySelectorAll('input[type="submit"]')
-                ].filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
-
-                const btn = buttons.find(el => {
-                    const value = norm(el.getAttribute('value'));
-                    const text = norm(el.innerText || el.textContent);
-                    return /upgrade\s*25\s*%\s*faster/i.test(value) ||
-                           /upgrade\s*25\s*%\s*faster/i.test(text);
+                const norm = s => (s || '').replace(/\s+/g,' ').trim().toLowerCase();
+                const root = document.querySelector('#build, #villageContent') || document.body;
+                const all = [...root.querySelectorAll('button,a,input[type=submit],input[type=button],[role=button]')];
+                const candidates = all.filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+                const btn = candidates.find(el => {
+                    const text = norm(el.innerText || el.textContent || el.value || el.title || el.getAttribute('aria-label'));
+                    const cls = (el.className || '').toString().toLowerCase();
+                    const href = (el.getAttribute('href') || '').toLowerCase();
+                    if (/cancel|demolish|destroy|remove/.test(text + ' ' + cls)) return false;
+                    return /upgrade|upgrade to level|build/.test(text) ||
+                           /(?:^|\s)(green|build|upgrade)(?:\s|$)/.test(cls) ||
+                           /build\.php/.test(href);
+                }) || candidates.find(el => {
+                    const cls = (el.className || '').toString().toLowerCase();
+                    return /green/.test(cls) && /build|upgrade/.test(cls);
                 });
-
-                if (!btn) return 'button-not-found';
-
-                btn.scrollIntoView({block:'center', inline:'center'});
-                try {
-                    btn.click();
-                    return 'clicked';
-                } catch (_) {
-                    try {
-                        btn.dispatchEvent(new MouseEvent('click', {
-                            bubbles:true, cancelable:true, view:window
-                        }));
-                        return 'clicked';
-                    } catch (_) {
-                        return 'click-error';
-                    }
+                if (!btn) return 'not-found';
+                btn.scrollIntoView({block:'center'});
+                const href = btn.getAttribute('href') || '';
+                if (href && /build\.php/i.test(href)) {
+                    window.location.href = href;
+                    return 'navigated:' + href;
                 }
+                btn.click();
+                return 'clicked:' + (btn.innerText || btn.value || 'upgrade');
             })();
         """.trimIndent()
-
         automationWebView()?.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
-
-            when (result) {
-                "clicked" -> {
-                    logEvent("Resource Builder: $name — tombol Upgrade 25% faster DIKLIK")
-                    logEvent("Resource Builder: $name — menunggu DOM #videoArea muncul")
-                    waitForVideoAreaThenRedirect(
-                        expectedPath = "dorf1.php",
-                        villageName = name,
-                        attempt = 0,
-                        maxVideoAttempts = 40
-                    )
-                }
-
-                "upgrade-not-found" -> {
-                    logEvent("Resource Builder: $name — DOM 'Upgrade to Level' belum ditemukan; retry")
-                    handler.postDelayed({
-                        if (running && builderInProgress && !townBuilderInProgress) clickResourceUpgrade()
-                    }, 1000L)
-                }
-
-                "button-not-found" -> {
-                    logEvent("Resource Builder: $name — DOM 'Upgrade to Level' ditemukan, tetapi tombol 25% faster belum muncul; retry")
-                    handler.postDelayed({
-                        if (running && builderInProgress && !townBuilderInProgress) clickResourceUpgrade()
-                    }, 1000L)
-                }
-
-                else -> {
-                    logEvent("Resource Builder: $name — gagal klik tombol 25% faster ($result); retry")
-                    handler.postDelayed({
-                        if (running && builderInProgress && !townBuilderInProgress) clickResourceUpgrade()
-                    }, 1000L)
-                }
-            }
-        }
-    }
-
-    /**
-     * Setelah tombol 25% faster diklik, tunggu popup/video DOM benar-benar muncul.
-     * Redirect baru diperiksa setelah #videoArea terdeteksi.
-     */
-    private fun waitForVideoAreaThenRedirect(
-        expectedPath: String,
-        villageName: String,
-        attempt: Int,
-        maxVideoAttempts: Int
-    ) {
-        if (!running || !builderInProgress) return
-
-        val js = """
-            (() => {
-                const video = document.querySelector('#videoArea');
-                const href = String(location.href || '');
-                const hasVideo = !!video;
-                const visibleVideo = hasVideo && (() => {
-                    const s = getComputedStyle(video);
-                    return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
-                })();
-                return JSON.stringify({
-                    video: hasVideo,
-                    videoVisible: visibleVideo,
-                    url: href
-                });
-            })();
-        """.trimIndent()
-
-        automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
-            val videoExists = result.contains("\"video\":true")
-            val videoVisible = result.contains("\"videoVisible\":true")
-
-            if (videoExists) {
-                logEvent(
-                    "${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: " +
-                        "$villageName — DOM #videoArea TERDETEKSI" +
-                        if (videoVisible) " (visible)" else " (ada di DOM)"
-                )
-                logEvent(
-                    "${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: " +
-                        "$villageName — popup 25% faster muncul; mulai menunggu redirect $expectedPath"
-                )
-                waitForVideoFeatureRedirect(
-                    expectedPath = expectedPath,
-                    villageName = villageName,
-                    attempt = 0
-                )
-                return@evaluateJavascript
-            }
-
-            if (attempt >= maxVideoAttempts) {
-                logEvent(
-                    "${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: " +
-                        "$villageName — TIMEOUT #videoArea setelah 25% faster; redirect belum ditunggu"
-                )
-                if (townBuilderInProgress) {
-                    advanceTownBuilderVillage()
-                } else {
-                    goToNextBuilderVillage()
-                }
-                return@evaluateJavascript
-            }
-
-            if (attempt == 0 || attempt % 5 == 0) {
-                logEvent(
-                    "${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: " +
-                        "$villageName — #videoArea belum muncul; retry ${attempt + 1}/$maxVideoAttempts"
-                )
-            }
-
-            handler.postDelayed({
-                waitForVideoAreaThenRedirect(
-                    expectedPath = expectedPath,
-                    villageName = villageName,
-                    attempt = attempt + 1,
-                    maxVideoAttempts = maxVideoAttempts
-                )
-            }, 500L)
-        }
-    }
-
-    private fun waitForVideoFeatureRedirect(expectedPath: String, villageName: String, attempt: Int = 0) {
-        if (!running || !builderInProgress) return
-
-        val maxAttempts = 60
-        val expectedPathPattern = Regex.escape(expectedPath)
-        val js = """
-            (() => {
-                const video = document.querySelector('#videoArea');
-                const href = String(location.href || '');
-                const redirected = new RegExp('${expectedPathPattern}(?:[?#]|$)', 'i').test(href);
-                return JSON.stringify({
-                    video: !!video,
-                    url: href,
-                    redirected: redirected
-                });
-            })();
-        """.trimIndent()
-
-        automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
-            val redirected = result.contains("\"redirected\":true")
-
-            if (redirected) {
-                logEvent(
-                    "${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: " +
-                        "$villageName — REDIRECT $expectedPath TERDETEKSI"
-                )
-
-                val villageId = builderVillages.getOrNull(builderVillageIndex)?.first.orEmpty()
-                val currentLevel = builderResourceLevels[villageId] ?: -1
+            if (result.startsWith("clicked") || result.startsWith("navigated")) {
+                pendingUpgradeUrl = ""
+                pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+                heroTransferCompleted = false
+                val villageLogName = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
+                val villageLogId = builderVillages.getOrNull(builderVillageIndex)?.first.orEmpty()
+                val currentLevel = builderResourceLevels[villageLogId] ?: -1
                 val targetLevel = if (currentLevel >= 0) currentLevel + 1 else -1
-
-                if (targetLevel >= 0 && !townBuilderInProgress) {
-                    logEvent("Village $villageName Upgrade to Level $targetLevel Success")
-                } else {
-                    logEvent("Village $villageName Upgrade Success")
-                }
-
-                handler.postDelayed({
-                    if (running) {
-                        if (townBuilderInProgress) {
-                            advanceTownBuilderVillage()
-                        } else {
-                            goToNextBuilderVillage()
-                        }
-                    }
-                }, 800L)
-                return@evaluateJavascript
+                if (targetLevel >= 0) logEvent("Village $villageLogName Upgrade to Level $targetLevel Success")
+                else logEvent("Village $villageLogName Upgrade Success")
+                handler.postDelayed({ goToNextBuilderVillage() }, 1200)
+            } else if (builderAttempt < 5) {
+                builderAttempt++
+                handler.postDelayed({ inspectUpgradeResources() }, 900)
+            } else {
+                pendingUpgradeUrl = ""
+                val villageLogName = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
+                logEvent("Village $villageLogName no upgrade")
+                goToNextBuilderVillage()
             }
-
-            if (attempt >= maxAttempts) {
-                logEvent(
-                    "${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: " +
-                        "$villageName — TIMEOUT menunggu redirect $expectedPath"
-                )
-                if (townBuilderInProgress) {
-                    advanceTownBuilderVillage()
-                } else {
-                    goToNextBuilderVillage()
-                }
-                return@evaluateJavascript
-            }
-
-            if (attempt == 0 || attempt % 10 == 0) {
-                logEvent(
-                    "${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: " +
-                        "$villageName — menunggu redirect $expectedPath (${attempt + 1}/$maxAttempts)"
-                )
-            }
-
-            handler.postDelayed({
-                waitForVideoFeatureRedirect(
-                    expectedPath = expectedPath,
-                    villageName = villageName,
-                    attempt = attempt + 1
-                )
-            }, 500L)
         }
     }
 
