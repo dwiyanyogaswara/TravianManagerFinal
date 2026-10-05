@@ -1033,21 +1033,9 @@ class FarmAutomationService : Service() {
                 return@acceptCookiesIfPresent
             }
 
-            if (builderStage == "WAIT_VIDEO_REDIRECT" && url != upgradeClickSourceUrl) {
-                val villageName = builderVillages.getOrNull(builderVillageIndex)?.second
-                    ?: "Village ${builderVillageIndex + 1}"
-                logEvent("Village $villageName redirect upgrade terdeteksi — proses selesai")
-                upgradeClickSourceUrl = ""
-                pendingUpgradeUrl = ""
-                pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
-                heroTransferCompleted = false
-                if (townBuilderInProgress) {
-                    builderStage = "TOWN_ADVANCING"
-                    handler.postDelayed({ advanceTownBuilderVillage() }, 300L)
-                } else if (builderInProgress) {
-                    builderStage = "ADVANCING"
-                    handler.postDelayed({ goToNextBuilderVillage() }, 300L)
-                }
+            // Setelah klik "Upgrade 25% faster", jangan lanjut hanya karena URL berubah.
+            // Proses video-feature upgrade diberi waktu penuh 40 detik.
+            if (builderStage == "WAIT_VIDEO_40SEC") {
                 return@acceptCookiesIfPresent
             }
 
@@ -3033,7 +3021,7 @@ private fun clickTransferSelected() {
         val view = automationWebView() ?: return
         val sourceUrl = view.url.orEmpty()
         if (sourceUrl.isBlank()) return
-        builderStage = "WAIT_VIDEO_REDIRECT"
+        builderStage = "WAIT_VIDEO_40SEC"
         upgradeClickSourceUrl = sourceUrl
         val js = """
             (() => {
@@ -3042,25 +3030,29 @@ private fun clickTransferSelected() {
                     const s = getComputedStyle(el), r = el.getBoundingClientRect();
                     return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const btn = document.querySelector('.videoFeatureButton');
-
-                
+                const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
+                    .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+                if (!btn) return 'not-found';
+                btn.scrollIntoView({block:'center', inline:'center'});
                 btn.click();
-                return JSON.stringify({
-                    ok:true,
-                    tag:btn.tagName,
-                    className:String(btn.className || ''),
-                    text:String(btn.innerText || btn.textContent || '').trim(),
-                    href:btn.href || '',
-                    onclick:btn.getAttribute('onclick') || ''
-                });
+                return 'clicked-video-upgrade';
             })();
         """.trimIndent()
         view.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"')
             val name = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
-            if (result.startsWith("{\"ok\":true")) {
-                logEvent("Town Builder: $name klik Upgrade 25% faster — DOM=$result — menunggu redirect")
+            if (result == "clicked-video-upgrade") {
+                logEvent("Town Builder: $name klik Upgrade 25% faster — tunggu 40 detik")
+                handler.postDelayed({
+                    if (!running || !townBuilderInProgress) return@postDelayed
+                    logEvent("Town Builder: $name selesai menunggu 40 detik — lanjut village berikutnya")
+                    upgradeClickSourceUrl = ""
+                    pendingUpgradeUrl = ""
+                    pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+                    heroTransferCompleted = false
+                    builderStage = "TOWN_ADVANCING"
+                    advanceTownBuilderVillage()
+                }, 40_000L)
             } else {
                 builderStage = "INSPECT_UPGRADE"
                 upgradeClickSourceUrl = ""
@@ -3227,7 +3219,7 @@ private fun clickTransferSelected() {
             return
         }
 
-        builderStage = "WAIT_VIDEO_REDIRECT"
+        builderStage = "WAIT_VIDEO_40SEC"
         upgradeClickSourceUrl = currentUrl
         val js = """
             (() => {
@@ -3236,25 +3228,29 @@ private fun clickTransferSelected() {
                     const s = getComputedStyle(el), r = el.getBoundingClientRect();
                     return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const btn = document.querySelector('.videoFeatureButton');
-                
-                
+                const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
+                    .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+                if (!btn) return 'not-found';
+                btn.scrollIntoView({block:'center', inline:'center'});
                 btn.click();
-                return JSON.stringify({
-                    ok:true,
-                    tag:btn.tagName,
-                    className:String(btn.className || ''),
-                    text:String(btn.innerText || btn.textContent || '').trim(),
-                    href:btn.href || '',
-                    onclick:btn.getAttribute('onclick') || ''
-                });
+                return 'clicked-video-upgrade';
             })();
         """.trimIndent()
         automationWebView()?.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"')
             val name = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
-            if (result.startsWith("{\"ok\":true")) {
-                logEvent("Resource Builder: $name klik Upgrade 25% faster — DOM=$result — menunggu redirect")
+            if (result == "clicked-video-upgrade") {
+                logEvent("Resource Builder: $name klik Upgrade 25% faster — tunggu 40 detik")
+                handler.postDelayed({
+                    if (!running || !builderInProgress || townBuilderInProgress) return@postDelayed
+                    logEvent("Resource Builder: $name selesai menunggu 40 detik — lanjut village berikutnya")
+                    upgradeClickSourceUrl = ""
+                    pendingUpgradeUrl = ""
+                    pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+                    heroTransferCompleted = false
+                    builderStage = "ADVANCING"
+                    goToNextBuilderVillage()
+                }, 40_000L)
             } else {
                 builderStage = "INSPECT_UPGRADE"
                 upgradeClickSourceUrl = ""
