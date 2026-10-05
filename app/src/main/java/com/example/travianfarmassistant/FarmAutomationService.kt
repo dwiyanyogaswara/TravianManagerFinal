@@ -18,6 +18,7 @@ import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
 import android.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -698,6 +699,8 @@ class FarmAutomationService : Service() {
         webView = WebView(this@FarmAutomationService).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            // Izinkan video feature Travian autoplay walaupun WebView automation berjalan di background.
+            settings.mediaPlaybackRequiresUserGesture = false
             settings.databaseEnabled = true
             settings.userAgentString =
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -708,6 +711,7 @@ class FarmAutomationService : Service() {
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             addJavascriptInterface(FarmBridge(), "AndroidFarm")
+            webChromeClient = object : WebChromeClient() {}
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     debugTrace("ENTER onPageFinished")
@@ -3030,10 +3034,10 @@ private fun clickTransferSelected() {
                     const s = getComputedStyle(el), r = el.getBoundingClientRect();
                     return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const btn = [...document.querySelectorAll('.videoFeatureButton')]
+                const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
                     .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
                 if (!btn) return 'not-found';
-            
+                btn.scrollIntoView({block:'center', inline:'center'});
                 btn.click();
                 return 'clicked-video-upgrade';
             })();
@@ -3228,10 +3232,10 @@ private fun clickTransferSelected() {
                     const s = getComputedStyle(el), r = el.getBoundingClientRect();
                     return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const btn = [...document.querySelectorAll('.videoFeatureButton')]
+                const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
                     .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
                 if (!btn) return 'not-found';
-                
+                btn.scrollIntoView({block:'center', inline:'center'});
                 btn.click();
                 return 'clicked-video-upgrade';
             })();
