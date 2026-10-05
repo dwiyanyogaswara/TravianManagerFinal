@@ -3042,8 +3042,8 @@ private fun clickTransferSelected() {
                     const s = getComputedStyle(el), r = el.getBoundingClientRect();
                     return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const btn = [...document.querySelectorAll('.textButtonV1.purple.build.videoFeatureButton')]
-                    .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+                const btn = document.querySelector('.videoFeatureButton');
+
                 if (!btn) return 'not-found';
                 btn.scrollIntoView({block:'center', inline:'center'});
                 const opts = {bubbles:true, cancelable:true, view:window};
@@ -3240,8 +3240,8 @@ private fun clickTransferSelected() {
                     const s = getComputedStyle(el), r = el.getBoundingClientRect();
                     return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const btn = [...document.querySelectorAll('.textButtonV1.purple.build.videoFeatureButton')]
-                    .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+                const btn = document.querySelector('.videoFeatureButton');
+                
                 if (!btn) return 'not-found';
                 btn.scrollIntoView({block:'center', inline:'center'});
                 const opts = {bubbles:true, cancelable:true, view:window};
