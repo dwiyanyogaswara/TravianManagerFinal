@@ -3042,19 +3042,29 @@ private fun clickTransferSelected() {
                     const s = getComputedStyle(el), r = el.getBoundingClientRect();
                     return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
+                const btn = [...document.querySelectorAll('.textButtonV1.purple.build.videoFeatureButton')]
                     .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
                 if (!btn) return 'not-found';
                 btn.scrollIntoView({block:'center', inline:'center'});
+                const opts = {bubbles:true, cancelable:true, view:window};
+                btn.dispatchEvent(new MouseEvent('mousedown', opts));
+                btn.dispatchEvent(new MouseEvent('mouseup', opts));
                 btn.click();
-                return 'clicked-video-upgrade';
+                return JSON.stringify({
+                    ok:true,
+                    tag:btn.tagName,
+                    className:String(btn.className || ''),
+                    text:String(btn.innerText || btn.textContent || '').trim(),
+                    href:btn.href || '',
+                    onclick:btn.getAttribute('onclick') || ''
+                });
             })();
         """.trimIndent()
         view.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"')
             val name = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
-            if (result == "clicked-video-upgrade") {
-                logEvent("Town Builder: $name klik Upgrade 25% faster — menunggu redirect")
+            if (result.startsWith("{\"ok\":true")) {
+                logEvent("Town Builder: $name klik Upgrade 25% faster — DOM=$result — menunggu redirect")
             } else {
                 builderStage = "INSPECT_UPGRADE"
                 upgradeClickSourceUrl = ""
@@ -3230,19 +3240,29 @@ private fun clickTransferSelected() {
                     const s = getComputedStyle(el), r = el.getBoundingClientRect();
                     return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
+                const btn = [...document.querySelectorAll('.textButtonV1.purple.build.videoFeatureButton')]
                     .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
                 if (!btn) return 'not-found';
                 btn.scrollIntoView({block:'center', inline:'center'});
+                const opts = {bubbles:true, cancelable:true, view:window};
+                btn.dispatchEvent(new MouseEvent('mousedown', opts));
+                btn.dispatchEvent(new MouseEvent('mouseup', opts));
                 btn.click();
-                return 'clicked-video-upgrade';
+                return JSON.stringify({
+                    ok:true,
+                    tag:btn.tagName,
+                    className:String(btn.className || ''),
+                    text:String(btn.innerText || btn.textContent || '').trim(),
+                    href:btn.href || '',
+                    onclick:btn.getAttribute('onclick') || ''
+                });
             })();
         """.trimIndent()
         automationWebView()?.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"')
             val name = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
-            if (result == "clicked-video-upgrade") {
-                logEvent("Resource Builder: $name klik Upgrade 25% faster — menunggu redirect")
+            if (result.startsWith("{\"ok\":true")) {
+                logEvent("Resource Builder: $name klik Upgrade 25% faster — DOM=$result — menunggu redirect")
             } else {
                 builderStage = "INSPECT_UPGRADE"
                 upgradeClickSourceUrl = ""
