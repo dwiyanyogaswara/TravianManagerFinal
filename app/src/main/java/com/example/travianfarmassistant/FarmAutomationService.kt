@@ -3044,11 +3044,7 @@ private fun clickTransferSelected() {
                 };
                 const btn = document.querySelector('.videoFeatureButton');
 
-                if (!btn) return 'not-found';
-                btn.scrollIntoView({block:'center', inline:'center'});
-                const opts = {bubbles:true, cancelable:true, view:window};
-                btn.dispatchEvent(new MouseEvent('mousedown', opts));
-                btn.dispatchEvent(new MouseEvent('mouseup', opts));
+                
                 btn.click();
                 return JSON.stringify({
                     ok:true,
@@ -3242,11 +3238,7 @@ private fun clickTransferSelected() {
                 };
                 const btn = document.querySelector('.videoFeatureButton');
                 
-                if (!btn) return 'not-found';
-                btn.scrollIntoView({block:'center', inline:'center'});
-                const opts = {bubbles:true, cancelable:true, view:window};
-                btn.dispatchEvent(new MouseEvent('mousedown', opts));
-                btn.dispatchEvent(new MouseEvent('mouseup', opts));
+                
                 btn.click();
                 return JSON.stringify({
                     ok:true,
