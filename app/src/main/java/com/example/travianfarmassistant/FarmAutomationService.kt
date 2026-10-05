@@ -3004,12 +3004,6 @@ private fun clickTransferSelected() {
     private fun clickTownUpgrade() {
         if (!running || !townBuilderInProgress) return
 
-        // Town Builder pada halaman Travian menggunakan tombol seperti:
-        // <button type="button" value="Upgrade to level 2"
-        //         class="textButtonV1 green build"
-        //         onclick="... window.location.href = '/dorf2.php?...'; ...">
-        // Jadi prioritaskan selector tersebut secara langsung. Jangan hanya
-        // mengandalkan href karena button ini memang tidak mempunyai href.
         val js = """
             (() => {
                 const visible = el => {
@@ -3024,7 +3018,7 @@ private fun clickTransferSelected() {
                 const lower = value => norm(value).toLowerCase();
 
                 const isUpgradeText = value =>
-                    /^(?:upgrade\s+to(?:\s+level)?(?:\s+\d+)?|upgrade)$/i.test(norm(value));
+                    /upgrade\s+to\s+level/i.test(norm(value)) || /^upgrade$/i.test(norm(value));
 
                 const isBad = el => {
                     const all = lower(
@@ -3036,78 +3030,44 @@ private fun clickTransferSelected() {
                     return /cancel|demolish|destroy|remove/.test(all);
                 };
 
-                // 1. Exact Travian Town Builder button.
-                // This matches the DOM supplied by the user:
-                // button.textButtonV1.green.build[value="Upgrade to level 2"]
-                const exactButtons = [...document.querySelectorAll(
-                    'button.textButtonV1.green.build, button.green.build, button.build'
+                const controls = [...document.querySelectorAll(
+                    'button,a,input[type=submit],input[type=button],[role=button]'
                 )].filter(el =>
-                    visible(el) && !el.disabled &&
-                    el.getAttribute('aria-disabled') !== 'true' && !isBad(el)
+                    visible(el) &&
+                    !el.disabled &&
+                    el.getAttribute('aria-disabled') !== 'true' &&
+                    !isBad(el)
                 );
 
-                let btn = exactButtons.find(el =>
+                const upgrade = controls.find(el =>
                     isUpgradeText(el.getAttribute('value')) ||
                     isUpgradeText(el.innerText) ||
                     isUpgradeText(el.textContent)
                 );
 
-                // 2. Fallback: any button whose visible text/value is Upgrade to...
-                if (!btn) {
-                    const controls = [...document.querySelectorAll(
-                        'button,a,input[type=submit],input[type=button],[role=button]'
-                    )].filter(el =>
-                        visible(el) && !el.disabled &&
-                        el.getAttribute('aria-disabled') !== 'true' && !isBad(el)
+                if (!upgrade) return 'not-found';
+
+                const faster = controls.find(el => {
+                    const text = norm(
+                        el.getAttribute('value') || el.innerText || el.textContent ||
+                        el.getAttribute('aria-label') || el.title || ''
                     );
-
-                    btn = controls.find(el => {
-                        const text = norm(
-                            el.innerText || el.textContent || el.value ||
-                            el.getAttribute('aria-label') || el.title || ''
-                        );
-                        return /upgrade\s+to(?:\s+level)?(?:\s+\d+)?/i.test(text) ||
-                               /^upgrade$/i.test(text);
-                    });
-                }
-
-                if (!btn) return 'not-found';
-
-                btn.scrollIntoView({block:'center', inline:'center'});
-
-                const label = norm(
-                    btn.getAttribute('value') || btn.innerText || btn.textContent || 'Upgrade'
+                    const cls = lower(el.className);
+                    return /25\s*%?\s*faster/i.test(text) &&
+                           (cls.includes('videofeaturebutton') || cls.includes('video') || cls.includes('build'));
+                }) || [...document.querySelectorAll('button.videoFeatureButton')].find(el =>
+                    visible(el) &&
+                    !el.disabled &&
+                    /25\s*%?\s*faster/i.test(
+                        norm(el.getAttribute('value') || el.innerText || el.textContent)
+                    )
                 );
-                const onclick = String(btn.getAttribute('onclick') || '');
 
-                // Travian's actual button contains window.location.href in onclick.
-                // Keep this as a fallback in case HTMLElement.click() is intercepted.
-                const match = onclick.match(/window\\.location\\.href\s*=\s*['\"]([^'\"]+)['\"]/i);
-                const target = match ? match[1].replace(/&amp;/g, '&') : '';
+                if (!faster) return 'faster-not-found';
 
-                try {
-                    btn.click();
-                } catch (e) {
-                    if (target) {
-                        window.location.href = target;
-                        return 'navigated-fallback:' + label;
-                    }
-                    return 'click-error:' + label;
-                }
-
-                // If the click did not start navigation synchronously, use the
-                // exact URL from onclick as a deterministic fallback.
-                if (target && window.location.href.indexOf(target) === -1) {
-                    setTimeout(() => {
-                        try {
-                            if (window.location.href.indexOf(target) === -1) {
-                                window.location.href = target;
-                            }
-                        } catch (_) {}
-                    }, 250);
-                }
-
-                return 'clicked:' + label + (target ? '|target:' + target : '');
+                faster.scrollIntoView({block:'center', inline:'center'});
+                faster.click();
+                return 'clicked-25-faster';
             })();
         """.trimIndent()
 
@@ -3116,19 +3076,91 @@ private fun clickTransferSelected() {
             val name = builderVillages.getOrNull(builderVillageIndex)?.second
                 ?: "Village ${builderVillageIndex + 1}"
 
-            if (result.startsWith("clicked") || result.startsWith("navigated")) {
-                builderStage = "TOWN_ADVANCING"
-                logEvent("Town Village $name Upgrade Success — $result")
-                handler.postDelayed({ advanceTownBuilderVillage() }, 1500L)
+            if (result == "clicked-25-faster") {
+                logEvent("Town Builder: $name — 25% faster diklik; menunggu videoArea")
+                waitForVideoAreaThenRedirect(isTownBuilder = true, villageName = name)
+            } else if (result == "faster-not-found") {
+                logEvent("Town Builder: $name — tombol 25% faster tidak ditemukan")
+                if (builderAttempt < 5) {
+                    builderAttempt++
+                    handler.postDelayed({ inspectUpgradeResources() }, 900)
+                } else {
+                    logEvent("Town Builder: $name — 25% faster gagal ditemukan; village dilewati")
+                    goToNextBuilderVillage()
+                }
             } else {
-                // Upgrade benar-benar tidak ditemukan. Baru setelah itu
-                // gunakan jalur Hero Transfer yang lama.
                 logEvent("Town Builder: tombol Upgrade tidak ditemukan ($result) — masuk jalur Hero Transfer")
                 inventoryUseAttempt = 0
                 pendingUpgradeUrl = automationWebView()?.url.orEmpty().ifBlank { pendingUpgradeUrl }
                 clickRedResourceForTransfer()
             }
         }
+    }
+
+    private fun waitForVideoAreaThenRedirect(isTownBuilder: Boolean, villageName: String) {
+        if (!running || !builderInProgress) return
+
+        val targetPage = if (isTownBuilder) "dorf2.php" else "dorf1.php"
+        val moduleName = if (isTownBuilder) "Town Builder" else "Resource Builder"
+        val maxVideoAttempts = 30
+        val maxRedirectAttempts = 120
+
+        lateinit var pollVideo: (Int) -> Unit
+        lateinit var pollRedirect: (Int) -> Unit
+
+        pollVideo = pollVideo@{ attempt ->
+            if (!running || !builderInProgress) return@pollVideo
+
+            automationWebView()?.evaluateJavascript(
+                """
+                (() => {
+                    const el = document.querySelector('#videoArea');
+                    if (!el) return 'not-found';
+                    const s = getComputedStyle(el);
+                    const r = el.getBoundingClientRect();
+                    return (s.display !== 'none' && s.visibility !== 'hidden' &&
+                            s.opacity !== '0' && r.width > 0 && r.height > 0)
+                        ? 'visible' : 'not-visible';
+                })();
+                """.trimIndent()
+            ) { raw ->
+                val result = raw.orEmpty().trim('"')
+
+                if (result == "visible") {
+                    logEvent("$moduleName: $villageName — videoArea muncul; menunggu redirect $targetPage")
+                    pollRedirect(0)
+                } else if (attempt < maxVideoAttempts) {
+                    handler.postDelayed({ pollVideo(attempt + 1) }, 500L)
+                } else {
+                    logEvent("$moduleName: $villageName — videoArea tidak muncul setelah menunggu; village dilewati")
+                    goToNextBuilderVillage()
+                }
+            }
+        }
+
+        pollRedirect = pollRedirect@{ attempt ->
+            if (!running || !builderInProgress) return@pollRedirect
+
+            val currentUrl = automationWebView()?.url.orEmpty()
+            if (currentUrl.contains(targetPage, ignoreCase = true)) {
+                pendingUpgradeUrl = ""
+                pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+                heroTransferCompleted = false
+                builderAttempt = 0
+                logEvent("$moduleName: $villageName — redirect $targetPage terdeteksi; Upgrade Success")
+                handler.postDelayed({ goToNextBuilderVillage() }, 500L)
+                return@pollRedirect
+            }
+
+            if (attempt < maxRedirectAttempts) {
+                handler.postDelayed({ pollRedirect(attempt + 1) }, 500L)
+            } else {
+                logEvent("$moduleName: $villageName — redirect $targetPage tidak terdeteksi; village dilewati")
+                goToNextBuilderVillage()
+            }
+        }
+
+        pollVideo(0)
     }
 
     private fun useHeroInventoryForPendingUpgrade(): Unit {
@@ -3294,56 +3326,89 @@ private fun clickTransferSelected() {
                 const visible = el => {
                     if (!el) return false;
                     const s = getComputedStyle(el), r = el.getBoundingClientRect();
-                    return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+                    return s.display !== 'none' && s.visibility !== 'hidden' &&
+                           s.opacity !== '0' && r.width > 0 && r.height > 0;
                 };
-                const norm = s => (s || '').replace(/\s+/g,' ').trim().toLowerCase();
-                const root = document.querySelector('#build, #villageContent') || document.body;
-                const all = [...root.querySelectorAll('button,a,input[type=submit],input[type=button],[role=button]')];
-                const candidates = all.filter(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
-                const btn = candidates.find(el => {
-                    const text = norm(el.innerText || el.textContent || el.value || el.title || el.getAttribute('aria-label'));
-                    const cls = (el.className || '').toString().toLowerCase();
-                    const href = (el.getAttribute('href') || '').toLowerCase();
-                    if (/cancel|demolish|destroy|remove/.test(text + ' ' + cls)) return false;
-                    return /upgrade|upgrade to level|build/.test(text) ||
-                           /(?:^|\s)(green|build|upgrade)(?:\s|$)/.test(cls) ||
-                           /build\.php/.test(href);
-                }) || candidates.find(el => {
-                    const cls = (el.className || '').toString().toLowerCase();
-                    return /green/.test(cls) && /build|upgrade/.test(cls);
+                const norm = s => String(s || '').replace(/\s+/g,' ').trim();
+                const controls = [...document.querySelectorAll(
+                    'button,a,input[type=submit],input[type=button],[role=button]'
+                )].filter(el =>
+                    visible(el) &&
+                    !el.disabled &&
+                    el.getAttribute('aria-disabled') !== 'true'
+                );
+
+                const upgrade = controls.find(el => {
+                    const text = norm(
+                        el.innerText || el.textContent || el.value ||
+                        el.title || el.getAttribute('aria-label')
+                    );
+                    return /upgrade\s+to\s+level/i.test(text) || /^upgrade$/i.test(text);
                 });
-                if (!btn) return 'not-found';
-                btn.scrollIntoView({block:'center'});
-                const href = btn.getAttribute('href') || '';
-                if (href && /build\.php/i.test(href)) {
-                    window.location.href = href;
-                    return 'navigated:' + href;
-                }
-                btn.click();
-                return 'clicked:' + (btn.innerText || btn.value || 'upgrade');
+
+                if (!upgrade) return 'not-found';
+
+                const faster = controls.find(el => {
+                    const text = norm(
+                        el.getAttribute('value') || el.innerText || el.textContent ||
+                        el.getAttribute('aria-label') || el.title || ''
+                    );
+                    const cls = String(el.className || '').toLowerCase();
+                    return /25\s*%?\s*faster/i.test(text) &&
+                           (cls.includes('videofeaturebutton') || cls.includes('video') || cls.includes('build'));
+                }) || [...document.querySelectorAll('button.videoFeatureButton')].find(el =>
+                    visible(el) &&
+                    !el.disabled &&
+                    /25\s*%?\s*faster/i.test(
+                        norm(el.getAttribute('value') || el.innerText || el.textContent)
+                    )
+                );
+
+                if (!faster) return 'faster-not-found';
+
+                faster.scrollIntoView({block:'center', inline:'center'});
+                faster.click();
+                return 'clicked-25-faster';
             })();
         """.trimIndent()
+
         automationWebView()?.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"').replace("\\\"", "\"")
-            if (result.startsWith("clicked") || result.startsWith("navigated")) {
-                pendingUpgradeUrl = ""
-                pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
-                heroTransferCompleted = false
-                val villageLogName = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
-                val villageLogId = builderVillages.getOrNull(builderVillageIndex)?.first.orEmpty()
-                val currentLevel = builderResourceLevels[villageLogId] ?: -1
-                val targetLevel = if (currentLevel >= 0) currentLevel + 1 else -1
-                if (targetLevel >= 0) logEvent("Village $villageLogName Upgrade to Level $targetLevel Success")
-                else logEvent("Village $villageLogName Upgrade Success")
-                handler.postDelayed({ goToNextBuilderVillage() }, 1200)
-            } else if (builderAttempt < 5) {
-                builderAttempt++
-                handler.postDelayed({ inspectUpgradeResources() }, 900)
-            } else {
-                pendingUpgradeUrl = ""
-                val villageLogName = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
-                logEvent("Village $villageLogName no upgrade")
-                goToNextBuilderVillage()
+            val villageLogName = builderVillages.getOrNull(builderVillageIndex)?.second
+                ?: "Village ${builderVillageIndex + 1}"
+
+            when (result) {
+                "clicked-25-faster" -> {
+                    logEvent("Resource Builder: $villageLogName — 25% faster diklik; menunggu videoArea")
+                    waitForVideoAreaThenRedirect(isTownBuilder = false, villageName = villageLogName)
+                }
+                "faster-not-found" -> {
+                    if (builderAttempt < 5) {
+                        builderAttempt++
+                        handler.postDelayed({ inspectUpgradeResources() }, 900)
+                    } else {
+                        logEvent("Resource Builder: $villageLogName — 25% faster tidak ditemukan; village dilewati")
+                        pendingUpgradeUrl = ""
+                        goToNextBuilderVillage()
+                    }
+                }
+                else -> {
+                    if (result == "not-found") {
+                        if (builderAttempt < 5) {
+                            builderAttempt++
+                            handler.postDelayed({ inspectUpgradeResources() }, 900)
+                        } else {
+                            pendingUpgradeUrl = ""
+                            logEvent("Village $villageLogName no upgrade")
+                            goToNextBuilderVillage()
+                        }
+                    } else {
+                        logEvent("Resource Builder: tombol Upgrade tidak ditemukan ($result) — masuk jalur Hero Transfer")
+                        inventoryUseAttempt = 0
+                        pendingUpgradeUrl = automationWebView()?.url.orEmpty().ifBlank { pendingUpgradeUrl }
+                        clickRedResourceForTransfer()
+                    }
+                }
             }
         }
     }
