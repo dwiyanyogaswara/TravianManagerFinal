@@ -1251,7 +1251,6 @@ class MainActivity : Activity() {
                             }
                         } else {
                             otherInputRow.visibility = View.GONE
-                            box.text = townDisplayText(selectedLink)
                             val recordsNow = loadVillageDataRecords()
                             val idx = recordsNow.indexOfFirst { it.id == id }
                             if (idx >= 0) {
@@ -1259,7 +1258,6 @@ class MainActivity : Activity() {
                                 saveVillageDataRecords(recordsNow)
                             }
                         }
-                        box.text = townDisplayText(selectedLink)
                     }
                 }
             }
@@ -1303,7 +1301,6 @@ class MainActivity : Activity() {
                 if (idx >= 0) {
                     recordsNow[idx] = recordsNow[idx].copy(linkTown = link, townId = oid, townGid = ogid)
                     saveVillageDataRecords(recordsNow)
-                    box.text = townDisplayText("__OTHER__")
                 }
             }
             cardTownId.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus && currentTownKey == "__OTHER__") saveOtherTown() }
