@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.net.Uri
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -92,6 +93,39 @@ class FarmAutomationService : Service() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+
+    // Menjaga CPU tetap berjalan saat layar mati. Handler/postDelayed saja
+    // tidak cukup untuk scheduler bot karena Android dapat menunda callback
+    // ketika device masuk Doze/deep sleep. Wake lock hanya aktif selama bot ON.
+    private var schedulerWakeLock: PowerManager.WakeLock? = null
+
+    private fun acquireSchedulerWakeLock() {
+        try {
+            if (schedulerWakeLock?.isHeld == true) return
+            val pm = getSystemService(POWER_SERVICE) as? PowerManager ?: return
+            schedulerWakeLock = pm.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "TravianFarmAssistant:Scheduler"
+            ).apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            logEvent("Scheduler: PARTIAL_WAKE_LOCK ON")
+        } catch (e: Exception) {
+            logEvent("Scheduler: gagal acquire wake lock — ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    private fun releaseSchedulerWakeLock() {
+        try {
+            schedulerWakeLock?.let {
+                if (it.isHeld) it.release()
+            }
+        } catch (_: Exception) {
+        } finally {
+            schedulerWakeLock = null
+        }
+    }
     private var webView: WebView? = null
     private var running = false
     private var pendingStartAll = false
@@ -367,8 +401,13 @@ class FarmAutomationService : Service() {
             if (!running) return
             try {
                 val now = System.currentTimeMillis()
-                val cycleActive = getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .getBoolean("cycle_active", false)
+                val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+                val cycleActive = prefs.getBoolean("cycle_active", false)
+
+                // Jangan bergantung pada kapan Handler sempat menjalankan timeout.
+                // Saat device baru bangun dari sleep, cek elapsed time secara absolut
+                // lalu lanjutkan state machine dari titik yang benar.
+                checkModuleWallClockTimeouts(now)
 
                 // Scheduler heartbeat juga menjadi pengaman untuk Refresh Village.
                 // Jika callback +30 detik sempat hilang/tertunda karena WebView atau
@@ -399,6 +438,33 @@ class FarmAutomationService : Service() {
             } finally {
                 if (running) handler.postDelayed(this, 10_000L)
             }
+        }
+    }
+
+    private fun checkModuleWallClockTimeouts(now: Long) {
+        if (!running) return
+
+        // 4 menit adalah batas modul yang sudah dipakai oleh timeout Runnable.
+        // Perbedaannya: pemeriksaan ini memakai wall-clock, jadi keterlambatan
+        // Handler ketika layar mati tidak membuat modul berjalan berjam-jam.
+        if (builderInProgress && !townBuilderInProgress && resourceBuilderCycleStartedAt > 0L &&
+            now - resourceBuilderCycleStartedAt >= moduleMaxDurationMs) {
+            logEvent("Scheduler: Res Builder timeout terdeteksi dari wall-clock")
+            resourceBuilderTimeoutRunnable.run()
+            return
+        }
+
+        if (townBuilderInProgress && townBuilderCycleStartedAt > 0L &&
+            now - townBuilderCycleStartedAt >= moduleMaxDurationMs) {
+            logEvent("Scheduler: Town Builder timeout terdeteksi dari wall-clock")
+            townBuilderTimeoutRunnable.run()
+            return
+        }
+
+        if (holdCelebrationInProgress && holdCelebrationCycleStartedAt > 0L &&
+            now - holdCelebrationCycleStartedAt >= moduleMaxDurationMs) {
+            logEvent("Scheduler: Celebration timeout terdeteksi dari wall-clock")
+            celebrationTimeoutRunnable.run()
         }
     }
 
@@ -519,6 +585,9 @@ class FarmAutomationService : Service() {
         instanceRef = WeakReference(this)
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("Farm Assistant aktif"))
+        if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("service_running", false)) {
+            acquireSchedulerWakeLock()
+        }
         armSchedulerHeartbeat()
         handler.post { recoverAfterProcessRecreation() }
     }
@@ -606,6 +675,7 @@ class FarmAutomationService : Service() {
         }
 
         running = true
+        acquireSchedulerWakeLock()
         updateNotification("Farm Assistant — memulihkan service")
         logEvent("RECOVERY: proses Android dibuat ulang; memulihkan konfigurasi, WebView, dan scheduler")
         ensureServiceWebView()
@@ -766,6 +836,7 @@ class FarmAutomationService : Service() {
         }
 
         running = true
+        acquireSchedulerWakeLock()
         armSchedulerHeartbeat()
         cycleNumber = 0
         pendingStartAll = false
@@ -3876,6 +3947,7 @@ private fun clickTransferSelected() {
         persistActiveCycleDuration()
         // Nonaktifkan bot = hentikan siklus yang sedang berjalan dan seluruh callback tertunda.
         running = false
+        releaseSchedulerWakeLock()
         builderInProgress = false
         farmListCycleComplete = false
         countdownCyclePending = false
@@ -4142,6 +4214,7 @@ private fun clickTransferSelected() {
     override fun onDestroy() {
         debugTrace("ENTER onDestroy")
         handler.removeCallbacksAndMessages(null)
+        releaseSchedulerWakeLock()
         webView?.destroy()
         webView = null
         instanceRef = null
