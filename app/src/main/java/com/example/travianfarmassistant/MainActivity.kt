@@ -85,16 +85,12 @@ class MainActivity : Activity() {
 
     private data class VillageDataRecord(
         val isChecklist: Boolean,
-        val isCropper: Boolean,
         val namaVillage: String,
         val id: String,
         val linkVillage: String,
         val linkResource: String,
         val resourceId: String,
         val resourceGid: String,
-        val linkResourceNoCropper: String,
-        val resourceIdNoCropper: String,
-        val resourceGidNoCropper: String,
         val minLvl: Int,
         val linkTown: String,
         val townId: String,
@@ -143,16 +139,12 @@ class MainActivity : Activity() {
             out.add(
                 VillageDataRecord(
                     isChecklist = item.optBoolean("IsChecklist", false),
-                    isCropper = item.optBoolean("IsCropper", true),
                     namaVillage = item.optString("NamaVillage").trim().ifBlank { "Village $id" },
                     id = id,
                     linkVillage = rebaseTravianUrl(item.optString("LinkVillage").trim()),
                     linkResource = rebaseTravianUrl(item.optString("LinkResource").trim()),
                     resourceId = item.optString("ResourceId").trim(),
                     resourceGid = item.optString("ResourceGid").trim(),
-                    linkResourceNoCropper = rebaseTravianUrl(item.optString("LinkResourceNoCropper").trim()),
-                    resourceIdNoCropper = item.optString("ResourceIdNoCropper").trim(),
-                    resourceGidNoCropper = item.optString("ResourceGidNoCropper").trim(),
                     minLvl = item.optInt("MinLvl", -1),
                     linkTown = rebaseTravianUrl(item.optString("LinkTown", "-").trim().ifBlank { "-" }),
                     townId = item.optString("TownId", "").trim(),
@@ -170,16 +162,12 @@ class MainActivity : Activity() {
         records.distinctBy { it.id }.forEach { item ->
             array.put(JSONObject().apply {
                 put("IsChecklist", item.isChecklist)
-                put("IsCropper", item.isCropper)
                 put("NamaVillage", item.namaVillage)
                 put("Id", item.id)
                 put("LinkVillage", rebaseTravianUrl(item.linkVillage))
                 put("LinkResource", rebaseTravianUrl(item.linkResource))
                 put("ResourceId", item.resourceId)
                 put("ResourceGid", item.resourceGid)
-                put("LinkResourceNoCropper", rebaseTravianUrl(item.linkResourceNoCropper))
-                put("ResourceIdNoCropper", item.resourceIdNoCropper)
-                put("ResourceGidNoCropper", item.resourceGidNoCropper)
                 put("MinLvl", item.minLvl)
                 put("LinkTown", rebaseTravianUrl(item.linkTown))
                 put("TownId", item.townId)
@@ -200,15 +188,11 @@ class MainActivity : Activity() {
         linkResource: String? = null,
         resourceId: String? = null,
         resourceGid: String? = null,
-        linkResourceNoCropper: String? = null,
-        resourceIdNoCropper: String? = null,
-        resourceGidNoCropper: String? = null,
         minLvl: Int? = null,
         linkTown: String? = null,
         townId: String? = null,
         townGid: String? = null,
         isChecklist: Boolean? = null,
-        isCropper: Boolean? = null,
         isHoldCelebration: Boolean? = null
     ) {
         debugTrace("ENTER upsertVillageDataRecord")
@@ -219,16 +203,12 @@ class MainActivity : Activity() {
         val old = records.getOrNull(index)
         val updated = VillageDataRecord(
             isChecklist = isChecklist ?: old?.isChecklist ?: false,
-            isCropper = isCropper ?: old?.isCropper ?: true,
             namaVillage = namaVillage.trim().ifBlank { old?.namaVillage ?: "Village $cleanId" },
             id = cleanId,
             linkVillage = linkVillage?.trim()?.takeIf { it.isNotBlank() } ?: old?.linkVillage.orEmpty(),
             linkResource = linkResource?.trim()?.takeIf { it.isNotBlank() } ?: old?.linkResource.orEmpty(),
             resourceId = resourceId?.trim()?.takeIf { it.isNotBlank() } ?: old?.resourceId.orEmpty(),
             resourceGid = resourceGid?.trim()?.takeIf { it.isNotBlank() } ?: old?.resourceGid.orEmpty(),
-            linkResourceNoCropper = linkResourceNoCropper?.trim()?.takeIf { it.isNotBlank() } ?: old?.linkResourceNoCropper.orEmpty(),
-            resourceIdNoCropper = resourceIdNoCropper?.trim()?.takeIf { it.isNotBlank() } ?: old?.resourceIdNoCropper.orEmpty(),
-            resourceGidNoCropper = resourceGidNoCropper?.trim()?.takeIf { it.isNotBlank() } ?: old?.resourceGidNoCropper.orEmpty(),
             minLvl = minLvl ?: old?.minLvl ?: -1,
             linkTown = linkTown?.trim()?.takeIf { it.isNotBlank() } ?: old?.linkTown ?: "-",
             townId = townId?.trim() ?: old?.townId.orEmpty(),
@@ -250,14 +230,14 @@ class MainActivity : Activity() {
         saveVillageDataRecords(records)
     }
 
-    private fun updateVillageChecklistData(id: String, checked: Boolean, cropper: Boolean) {
+    private fun updateVillageChecklistData(id: String, checked: Boolean) {
         debugTrace("ENTER updateVillageChecklistData")
         val cleanId = id.trim()
         if (cleanId.isBlank()) return
         val records = loadVillageDataRecords()
         val index = records.indexOfFirst { it.id == cleanId }
         if (index < 0) return
-        records[index] = records[index].copy(isChecklist = checked, isCropper = cropper)
+        records[index] = records[index].copy(isChecklist = checked)
         saveVillageDataRecords(records)
     }
 
@@ -265,7 +245,7 @@ class MainActivity : Activity() {
         debugTrace("ENTER resetVillageResourceDataForRefresh")
         val records = loadVillageDataRecords()
         if (records.isEmpty()) return
-        saveVillageDataRecords(records.map { it.copy(linkResource = "", resourceId = "", resourceGid = "", linkResourceNoCropper = "", resourceIdNoCropper = "", resourceGidNoCropper = "", minLvl = -1) })
+        saveVillageDataRecords(records.map { it.copy(linkResource = "", resourceId = "", resourceGid = "", minLvl = -1) })
     }
 
     private data class ResourceSnapshot(
@@ -979,9 +959,8 @@ class MainActivity : Activity() {
             for (j in 0 until row.childCount) {
                 val card = row.getChildAt(j) as? LinearLayout ?: continue
                 val id = card.tag?.toString().orEmpty()
-                val cropBox = card.findViewWithTag<CheckBox>("resource_cropper:$id")
-                val noCropBox = card.findViewWithTag<CheckBox>("resource_nocropper:$id")
-                if ((cropBox?.isChecked == true || noCropBox?.isChecked == true) && id.isNotBlank()) ids.add(id)
+                val box = card.findViewWithTag<CheckBox>("resource:$id")
+                if (box?.isChecked == true && id.isNotBlank()) ids.add(id)
             }
         }
         return ids
@@ -1004,10 +983,10 @@ class MainActivity : Activity() {
 
         val lines = mutableListOf<String>()
         lines += "DATABASE VILLAGE (${records.size})"
-        lines += "CHK | MODE | NAMA | ID | LINK VILLAGE | LINK RESOURCE | RES ID | GID | MIN LVL | TOWN ID | TOWN GID | LINK TOWN | HOLD CELEBRATION"
+        lines += "CHK | NAMA | ID | LINK VILLAGE | LINK RESOURCE | RES ID | GID | MIN LVL | TOWN ID | TOWN GID | LINK TOWN | HOLD CELEBRATION"
         lines += "----+------+----+--------------+---------------+--------+-----+-------+---------+----------+-----------+-----------------"
         records.forEach { item ->
-            lines += "${if (item.isChecklist) "✓" else "-"} | ${if (item.isCropper) "CROPPER" else "NO-CROPPER"} | ${item.namaVillage} | ${item.id} | ${item.linkVillage.ifBlank { "-" }} | ${item.linkResource.ifBlank { "-" }} | ${item.resourceId.ifBlank { "-" }} | ${item.resourceGid.ifBlank { "-" }} | ${if (item.minLvl >= 0) "L${item.minLvl}" else "-"} | ${item.townId.ifBlank { "-" }} | ${item.townGid.ifBlank { "-" }} | ${item.linkTown.ifBlank { "-" }} | ${if (item.isHoldCelebration) "✓" else "-"}"
+            lines += "${if (item.isChecklist) "✓" else "-"} | ${item.namaVillage} | ${item.id} | ${item.linkVillage.ifBlank { "-" }} | ${item.linkResource.ifBlank { "-" }} | ${item.resourceId.ifBlank { "-" }} | ${item.resourceGid.ifBlank { "-" }} | ${if (item.minLvl >= 0) "L${item.minLvl}" else "-"} | ${item.townId.ifBlank { "-" }} | ${item.townGid.ifBlank { "-" }} | ${item.linkTown.ifBlank { "-" }} | ${if (item.isHoldCelebration) "✓" else "-"}"
         }
         villageDatabaseView.text = lines.joinToString("\n")
         villageDatabaseView.setTextIsSelectable(true)
@@ -1056,12 +1035,10 @@ class MainActivity : Activity() {
                 for (i in 1 until villageChecklist.childCount) {
                     val card = villageChecklist.getChildAt(i) as? LinearLayout ?: continue
                     val id = card.tag?.toString().orEmpty()
-                    val cropBox = card.findViewWithTag<CheckBox>("resource_cropper:$id")
-                    val noCropBox = card.findViewWithTag<CheckBox>("resource_nocropper:$id")
-                    if (cropBox != null && noCropBox != null) {
-                        cropBox.isChecked = checked
-                        noCropBox.isChecked = false
-                        updateVillageChecklistData(id, checked, true)
+                    val box = card.findViewWithTag<CheckBox>("resource:$id")
+                    if (box != null) {
+                        box.isChecked = checked
+                        updateVillageChecklistData(id, checked)
                     }
                 }
                 getSharedPreferences("config", MODE_PRIVATE).edit()
@@ -1140,56 +1117,18 @@ class MainActivity : Activity() {
                 }
             }
 
-            val currentCropper = record?.isCropper ?: true
-
-            lateinit var cropperBox: CheckBox
-            lateinit var noCropperBox: CheckBox
-            var changingMode = false
-
-            fun persistBuilderChoice(checked: Boolean, cropper: Boolean) {
-                if (changingMode) return
-                val enabled = checked
-                updateVillageChecklistData(id, enabled, cropper)
-                getSharedPreferences("config", MODE_PRIVATE).edit()
-                    .putBoolean("resource_builder_selection_configured", true)
-                    .putStringSet("resource_builder_selected_villages", selectedVillageIds())
-                    .putString("resource_builder_villages_json", villageSelectionJson())
-                    .apply()
-            }
-
-            cropperBox = CheckBox(this).apply {
-                text = "Res Builder + Cropper"
-                tag = "resource_cropper:$id"
+            val box = CheckBox(this).apply {
+                text = townDisplayText(currentTownKey)
+                tag = "resource:$id"
                 isEnabled = !selectionControlsLocked
-                isChecked = if (configured) saved.contains(id) && currentCropper else true
+                isChecked = if (configured) saved.contains(id) else true
                 setOnCheckedChangeListener { _, checked ->
-                    if (changingMode) return@setOnCheckedChangeListener
-                    if (checked) {
-                        changingMode = true
-                        noCropperBox.isChecked = false
-                        changingMode = false
-                        persistBuilderChoice(true, true)
-                    } else if (!noCropperBox.isChecked) {
-                        persistBuilderChoice(false, true)
-                    }
-                }
-            }
-
-            noCropperBox = CheckBox(this).apply {
-                text = "Res Builder tanpa Cropper"
-                tag = "resource_nocropper:$id"
-                isEnabled = !selectionControlsLocked
-                isChecked = configured && saved.contains(id) && !currentCropper
-                setOnCheckedChangeListener { _, checked ->
-                    if (changingMode) return@setOnCheckedChangeListener
-                    if (checked) {
-                        changingMode = true
-                        cropperBox.isChecked = false
-                        changingMode = false
-                        persistBuilderChoice(true, false)
-                    } else if (!cropperBox.isChecked) {
-                        persistBuilderChoice(false, false)
-                    }
+                    updateVillageChecklistData(id, checked)
+                    getSharedPreferences("config", MODE_PRIVATE).edit()
+                        .putBoolean("resource_builder_selection_configured", true)
+                        .putStringSet("resource_builder_selected_villages", selectedVillageIds())
+                        .putString("resource_builder_villages_json", villageSelectionJson())
+                        .apply()
                 }
             }
 
@@ -1251,6 +1190,7 @@ class MainActivity : Activity() {
                             }
                         } else {
                             otherInputRow.visibility = View.GONE
+                            box.text = townDisplayText(selectedLink)
                             val recordsNow = loadVillageDataRecords()
                             val idx = recordsNow.indexOfFirst { it.id == id }
                             if (idx >= 0) {
@@ -1258,6 +1198,7 @@ class MainActivity : Activity() {
                                 saveVillageDataRecords(recordsNow)
                             }
                         }
+                        box.text = townDisplayText(selectedLink)
                     }
                 }
             }
@@ -1301,6 +1242,7 @@ class MainActivity : Activity() {
                 if (idx >= 0) {
                     recordsNow[idx] = recordsNow[idx].copy(linkTown = link, townId = oid, townGid = ogid)
                     saveVillageDataRecords(recordsNow)
+                    box.text = townDisplayText("__OTHER__")
                 }
             }
             cardTownId.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus && currentTownKey == "__OTHER__") saveOtherTown() }
@@ -1323,8 +1265,7 @@ class MainActivity : Activity() {
 
             townAndHold.addView(spinner)
             townAndHold.addView(hold)
-            card.addView(cropperBox)
-            card.addView(noCropperBox)
+            card.addView(box)
             card.addView(townAndHold)
             card.addView(otherInputRow)
             villageChecklist.addView(card)
@@ -2059,9 +2000,6 @@ class MainActivity : Activity() {
                 const lowestResource = resourceCandidates.find(
                     x => !x.disabled && x.level >= 0 && x.gid >= 1 && x.gid <= 4 && x.level < 10
                 ) || null;
-                const lowestNoCropperResource = resourceCandidates.find(
-                    x => !x.disabled && x.level >= 0 && x.gid >= 1 && x.gid <= 3 && x.level < 10
-                ) || null;
 
                 // Semua 18 field harus benar-benar teridentifikasi sebagai pasangan
                 // {fieldId,gid,level}; jumlah node DOM saja tidak cukup.
@@ -2151,7 +2089,7 @@ class MainActivity : Activity() {
                     id:expectedId, name:pageName, minLevel:(lowestResource?.level ?? Math.min(...uniqueLevels)),
                     fields:uniqueLevels, fieldNodeCount:uniqueFields, resourceFieldCount:uniqueFields,
                     debugFieldCount:debugFields.length, debugFields,
-                    resourceContainer:true, activeId, activeName, url, resources, lowestResource, lowestNoCropperResource
+                    resourceContainer:true, activeId, activeName, url, resources, lowestResource
                 }));
             })();
         """.trimIndent()
@@ -2215,11 +2153,6 @@ class MainActivity : Activity() {
         val lowestResourceId = lowestResource?.optString("fieldId", "").orEmpty()
         val lowestResourceGid = lowestResource?.optString("gid", "").orEmpty()
         val lowestResourceHref = lowestResource?.optString("href", "").orEmpty()
-        val lowestNoCropperResource = json?.optJSONObject("lowestNoCropperResource")
-        val lowestNoCropperLevel = lowestNoCropperResource?.optInt("level", -1) ?: -1
-        val lowestNoCropperId = lowestNoCropperResource?.optString("fieldId", "").orEmpty()
-        val lowestNoCropperGid = lowestNoCropperResource?.optString("gid", "").orEmpty()
-        val lowestNoCropperHref = lowestNoCropperResource?.optString("href", "").orEmpty()
         // Jangan percaya link village yang dikumpulkan dari sidebar untuk record hasil
         // scan. Sidebar Travian bisa memakai data-did lama/stale atau hanya merender
         // sebagian village. Pada titik ini URL sudah diverifikasi dengan expectedId,
@@ -2238,12 +2171,8 @@ class MainActivity : Activity() {
             linkResource = lowestResourceHref.takeIf { it.isNotBlank() },
             resourceId = lowestResourceId.takeIf { it.isNotBlank() },
             resourceGid = lowestResourceGid.takeIf { it.isNotBlank() },
-            linkResourceNoCropper = lowestNoCropperHref.takeIf { it.isNotBlank() },
-            resourceIdNoCropper = lowestNoCropperId.takeIf { it.isNotBlank() },
-            resourceGidNoCropper = lowestNoCropperGid.takeIf { it.isNotBlank() },
             minLvl = minLevel,
-            isChecklist = existingRecord?.isChecklist,
-            isCropper = existingRecord?.isCropper
+            isChecklist = existingRecord?.isChecklist
         )
         if (minLevel >= 0) logEvent("Village $name Updated min L$minLevel")
 
@@ -2310,8 +2239,7 @@ class MainActivity : Activity() {
                 "id=${lowestResourceId.ifBlank { "-" }}; " +
                 "gid=${lowestResourceGid.ifBlank { "-" }}; " +
                 "level=${if (lowestResourceLevel >= 0) "L$lowestResourceLevel" else "-"}; " +
-                "href=${lowestResourceHref.ifBlank { "-" }}; " +
-                "noCropper=${lowestNoCropperHref.ifBlank { "-" }}"
+                "href=${lowestResourceHref.ifBlank { "-" }}"
         )
         if (capacityTab.visibility == View.VISIBLE) renderCapacityOverview()
 

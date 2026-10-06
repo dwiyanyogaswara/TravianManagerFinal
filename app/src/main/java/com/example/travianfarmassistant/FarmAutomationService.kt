@@ -119,16 +119,12 @@ class FarmAutomationService : Service() {
     private var cycleWaitingForRefreshRetry = false
     private data class VillageDataRecord(
         val isChecklist: Boolean,
-        val isCropper: Boolean,
         val namaVillage: String,
         val id: String,
         val linkVillage: String,
         val linkResource: String,
         val resourceId: String,
         val resourceGid: String,
-        val linkResourceNoCropper: String,
-        val resourceIdNoCropper: String,
-        val resourceGidNoCropper: String,
         val minLvl: Int,
         val linkTown: String,
         val townId: String,
@@ -165,16 +161,12 @@ class FarmAutomationService : Service() {
             out.add(
                 VillageDataRecord(
                     isChecklist = item.optBoolean("IsChecklist", false),
-                    isCropper = item.optBoolean("IsCropper", true),
                     namaVillage = item.optString("NamaVillage").trim().ifBlank { "Village $id" },
                     id = id,
                     linkVillage = rebaseTravianUrl(item.optString("LinkVillage").trim()),
                     linkResource = rebaseTravianUrl(item.optString("LinkResource").trim()),
                     resourceId = item.optString("ResourceId").trim(),
                     resourceGid = item.optString("ResourceGid").trim(),
-                    linkResourceNoCropper = rebaseTravianUrl(item.optString("LinkResourceNoCropper").trim()),
-                    resourceIdNoCropper = item.optString("ResourceIdNoCropper").trim(),
-                    resourceGidNoCropper = item.optString("ResourceGidNoCropper").trim(),
                     minLvl = item.optInt("MinLvl", -1),
                     linkTown = rebaseTravianUrl(item.optString("LinkTown", "-").trim().ifBlank { "-" }),
                     townId = item.optString("TownId", "").trim(),
@@ -191,16 +183,12 @@ class FarmAutomationService : Service() {
         records.distinctBy { it.id }.forEach { item ->
             array.put(JSONObject().apply {
                 put("IsChecklist", item.isChecklist)
-                put("IsCropper", item.isCropper)
                 put("NamaVillage", item.namaVillage)
                 put("Id", item.id)
                 put("LinkVillage", rebaseTravianUrl(item.linkVillage))
                 put("LinkResource", rebaseTravianUrl(item.linkResource))
                 put("ResourceId", item.resourceId)
                 put("ResourceGid", item.resourceGid)
-                put("LinkResourceNoCropper", rebaseTravianUrl(item.linkResourceNoCropper))
-                put("ResourceIdNoCropper", item.resourceIdNoCropper)
-                put("ResourceGidNoCropper", item.resourceGidNoCropper)
                 put("MinLvl", item.minLvl)
                 put("LinkTown", rebaseTravianUrl(item.linkTown))
                 put("TownId", item.townId)
@@ -219,8 +207,6 @@ class FarmAutomationService : Service() {
         builderVillages.clear()
         builderVillageLinks.clear()
         builderResourceLinks.clear()
-        builderResourceCropperLinks.clear()
-        builderResourceNoCropperLinks.clear()
         builderTownLinks.clear()
         builderResourceLevels.clear()
 
@@ -229,10 +215,7 @@ class FarmAutomationService : Service() {
         for (record in selected) {
             builderVillages.add(record.id to record.namaVillage)
             if (record.linkVillage.isNotBlank()) builderVillageLinks[record.id] = record.linkVillage
-            val selectedResourceLink = if (record.isCropper) record.linkResource else record.linkResourceNoCropper
-            if (selectedResourceLink.isNotBlank()) builderResourceLinks[record.id] = selectedResourceLink
-            if (record.linkResource.isNotBlank()) builderResourceCropperLinks[record.id] = record.linkResource
-            if (record.linkResourceNoCropper.isNotBlank()) builderResourceNoCropperLinks[record.id] = record.linkResourceNoCropper
+            if (record.linkResource.isNotBlank()) builderResourceLinks[record.id] = record.linkResource
             builderTownLinks[record.id] = record.linkTown.ifBlank { "-" }
             if (record.minLvl >= 0) builderResourceLevels[record.id] = record.minLvl
         }
@@ -244,8 +227,8 @@ class FarmAutomationService : Service() {
         selected.forEach { record ->
             logEvent(
                 "Resource Builder DB: ${record.namaVillage} [${record.id}] " +
-                    "check=${record.isChecklist}; mode=${if (record.isCropper) "CROPPER" else "NO-CROPPER"}; village=${record.linkVillage.ifBlank { "-" }}; " +
-                    "resource=${if (record.isCropper) record.linkResource else record.linkResourceNoCropper.ifBlank { record.linkResource }.ifBlank { "-" }}; min=L${record.minLvl}"
+                    "check=${record.isChecklist}; village=${record.linkVillage.ifBlank { "-" }}; " +
+                    "resource=${record.linkResource.ifBlank { "-" }}; min=L${record.minLvl}"
             )
         }
         return selected.isNotEmpty()
@@ -270,8 +253,6 @@ class FarmAutomationService : Service() {
     // Resource Builder tidak lagi menebak field dari halaman village ketika eksekusi;
     // ia memakai href yang sudah disimpan untuk village tersebut.
     private val builderResourceLinks = linkedMapOf<String, String>()
-    private val builderResourceCropperLinks = linkedMapOf<String, String>()
-    private val builderResourceNoCropperLinks = linkedMapOf<String, String>()
     private val builderTownLinks = linkedMapOf<String, String>()
     private val builderVillageLinks = linkedMapOf<String, String>()
     private val builderResourceLevels = linkedMapOf<String, Int>()
@@ -1793,9 +1774,6 @@ class FarmAutomationService : Service() {
                 const lowest = candidates.find(
                     x => !x.disabled && x.level >= 0 && x.gid >= 1 && x.gid <= 4 && x.level < 10
                 ) || null;
-                const lowestNoCropper = candidates.find(
-                    x => !x.disabled && x.level >= 0 && x.gid >= 1 && x.gid <= 3 && x.level < 10
-                ) || null;
 
                 // Samakan syarat readiness dengan refresh setelah login:
                 // minimal 18 field harus lengkap sebagai pasangan ID+GID+level.
@@ -1821,7 +1799,7 @@ class FarmAutomationService : Service() {
                     id:expectedId,
                     name,
                     minLevel:lowest?.level ?? Math.min(...candidates.map(x => x.level)),
-                    lowest, lowestNoCropper
+                    lowest
                 });
             })();
         """.trimIndent()
@@ -1851,11 +1829,7 @@ class FarmAutomationService : Service() {
             }
 
             val lowest = json.optJSONObject("lowest")
-            val lowestNoCropper = json.optJSONObject("lowestNoCropper")
             val href = lowest?.optString("href").orEmpty().trim()
-            val noCropperHref = lowestNoCropper?.optString("href").orEmpty().trim()
-            val noCropperId = lowestNoCropper?.optInt("fieldId", -1) ?: -1
-            val noCropperGid = lowestNoCropper?.optInt("gid", -1) ?: -1
             val resourceId = lowest?.optInt("fieldId", -1) ?: -1
             val resourceGid = lowest?.optInt("gid", -1) ?: -1
             val minLevel = lowest?.optInt("level", json.optInt("minLevel", -1))
@@ -1879,9 +1853,6 @@ class FarmAutomationService : Service() {
                     linkResource = if (validResourceTarget) "$server/build.php?id=${resourceId.toString()}&gid=${resourceGid.toString()}" else "",
                     resourceId = if (validResourceTarget) resourceId.toString() else "",
                     resourceGid = if (validResourceTarget) resourceGid.toString() else "",
-                    linkResourceNoCropper = if (noCropperHref.isNotBlank() && noCropperId in 1..18 && noCropperGid in 1..3) "$server/build.php?id=$noCropperId&gid=$noCropperGid" else "",
-                    resourceIdNoCropper = if (noCropperId in 1..18 && noCropperGid in 1..3) noCropperId.toString() else "",
-                    resourceGidNoCropper = if (noCropperId in 1..18 && noCropperGid in 1..3) noCropperGid.toString() else "",
                     minLvl = minLevel
                 )
                 saveVillageDataRecordsForService(records)
@@ -1909,16 +1880,12 @@ class FarmAutomationService : Service() {
         records.distinctBy { it.id }.forEach { item ->
             array.put(JSONObject().apply {
                 put("IsChecklist", item.isChecklist)
-                put("IsCropper", item.isCropper)
                 put("NamaVillage", item.namaVillage)
                 put("Id", item.id)
                 put("LinkVillage", rebaseTravianUrl(item.linkVillage))
                 put("LinkResource", rebaseTravianUrl(item.linkResource))
                 put("ResourceId", item.resourceId)
                 put("ResourceGid", item.resourceGid)
-                put("LinkResourceNoCropper", rebaseTravianUrl(item.linkResourceNoCropper))
-                put("ResourceIdNoCropper", item.resourceIdNoCropper)
-                put("ResourceGidNoCropper", item.resourceGidNoCropper)
                 put("MinLvl", item.minLvl)
                 put("LinkTown", rebaseTravianUrl(item.linkTown))
                 put("TownId", item.townId)
