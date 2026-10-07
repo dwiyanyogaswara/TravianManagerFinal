@@ -3218,12 +3218,12 @@ private fun clickTransferSelected() {
                                         clearInterval(keepPlaying);
                                         document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                                         document.documentElement.dataset.travianVideoSkipResult = 'video-ended';
-                                    }, 5000);
+                                    }, 10000);
                                 } catch (e) {
                                     document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                                     document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
                                 }
-                            }, 5000);
+                            }, 10000);
                         };
 
                         const video = findVideo();
@@ -3611,12 +3611,12 @@ private fun clickTransferSelected() {
                                         clearInterval(keepPlaying);
                                         document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                                         document.documentElement.dataset.travianVideoSkipResult = 'video-ended';
-                                    }, 5000);
+                                    }, 10000);
                                 } catch (e) {
                                     document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                                     document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
                                 }
-                            }, 5000);
+                            }, 10000);
                         };
 
                         const video = findVideo();
