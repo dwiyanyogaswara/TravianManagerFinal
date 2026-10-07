@@ -406,8 +406,8 @@ class MainActivity : Activity() {
         // https://ts20.x2.europe.travian.com
         val defaultServer = "https://.travian.com"
         serverInput.setText(savedCredential?.server?.takeIf { it.isNotBlank() } ?: defaultServer)
-        usernameInput.setText(savedCredential?.username ?: "")
-        passwordInput.setText(savedCredential?.password ?: "")
+        usernameInput.setText(savedCredential?.username ?: "TNR#EMBUH")
+        passwordInput.setText(savedCredential?.password ?: "Gooner4life!")
         if (savedCredential == null) {
             // One-time migration from the old encrypted SharedPreferences store.
             val legacyPassword = decryptSavedPassword(prefs.getString("password_secure", "").orEmpty())
