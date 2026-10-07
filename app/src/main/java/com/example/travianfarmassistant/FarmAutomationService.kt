@@ -3652,7 +3652,7 @@ private fun clickTransferSelected() {
                                 val stateJson = stateRaw.orEmpty().trim('"').replace("\\\"", "\"")
                                 val state = Regex("\"state\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
                                 val info = Regex("\"info\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
-                                when (state) {
+                                when {
                                     state.startsWith("video-play-failed:") -> {
                                         logEvent("Resource Builder: $name VIDEO PLAYBACK GAGAL — state=$state info=$info")
                                         logEvent("Resource Builder: $name video tidak selesai — lanjut village berikutnya")
