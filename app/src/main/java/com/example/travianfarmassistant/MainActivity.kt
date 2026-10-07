@@ -458,8 +458,8 @@ class MainActivity : Activity() {
         webView.settings.mediaPlaybackRequiresUserGesture = false
         webView.settings.databaseEnabled = true
         // TAMBAHKAN DUA BARIS INI: Agar skrip game diizinkan melakukan redirect/pindah halaman otomatis
-   webView.settingsjavaScriptCanOpenWindowsAutomatically = true
-  webView.settings.setSupportMultipleWindows(true)
+        webView.settings.javaScriptCanOpenWindowsAutomatically = true
+        webView.settings.setSupportMultipleWindows(true)
         // Live WebView selalu memakai User-Agent desktop + wide viewport supaya
         // halaman Travian dirender seperti desktop dan area Farm List lebih lengkap.
         webView.settings.userAgentString =
