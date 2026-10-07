@@ -738,6 +738,7 @@ class FarmAutomationService : Service() {
     private fun ensureServiceWebView() {
         debugTrace("ENTER ensureServiceWebView")
         if (webView != null) return
+        logEvent("Resource Builder: ensureServiceWebView")
         webView = WebView(this@FarmAutomationService).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -3199,9 +3200,9 @@ val js = """
                         } else {
                             goToNextBuilderVillage()
                         }
-                    }, 5000L)
+                    }, 7000L)
                 }
-            }, 40000L)
+            }, 10000L)
         }
     }
 
