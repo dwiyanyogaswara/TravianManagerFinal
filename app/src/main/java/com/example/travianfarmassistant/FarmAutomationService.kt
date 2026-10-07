@@ -3139,14 +3139,18 @@ val js = """
                 view.evaluateJavascript(
                     """
                     (() => {
-                        
                         const findVideo = () => {
-                            const videos = [...document.querySelectorAll('video')];
-                            return videos.find(v => {
-                                const r = v.getBoundingClientRect();
-                                return r.width > 0 && r.height > 0;
-                            }) || videos[0] || null;
-                        };
+    // Cari video yang bersumber dari traviangames atau memiliki z-index iklan tinggi
+    const videos = [...document.querySelectorAll('video')];
+    return videos.find(v => {
+        const src = v.src || '';
+        const isTravianVideo = src.includes('traviangames.com') || v.style.zIndex === '999999';
+        const r = v.getBoundingClientRect();
+        return isTravianVideo && r.width > 0 && r.height > 0;
+    }) || videos[0] || null;
+};
+
+                        
                         const video = findVideo();
                         const seekAfterDelay = (target) => {
                         try {
