@@ -3160,7 +3160,7 @@ const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.vide
                         return String(1);
                     })();
                 """.trimIndent()
-                logEvent("Town Builder: $name klik Upgrade 25% faster — menunggu video muncul")
+    
                 ) { rawCount ->
                     val count = rawCount.orEmpty().trim('"')
                     logEvent("$builderName: $villageName setelah 10 detik — seek ke 29 (video=$count), tunggu 7 detik")
