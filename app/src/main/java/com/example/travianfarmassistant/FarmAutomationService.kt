@@ -3084,23 +3084,14 @@ private fun clickTransferSelected() {
         // 5. Next village
         val js = """
             (() => {
-                const btn = [...document.querySelectorAll(
-                    '.videoFeatureButton'
-                )].find(el => {
-                    const r = el.getBoundingClientRect();
-                    const st = getComputedStyle(el);
-                    return !el.disabled &&
-                           st.display !== 'none' &&
-                           st.visibility !== 'hidden' &&
-                           r.width > 0 &&
-                           r.height > 0;
-                });
+            
 
+                const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
+                    .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
                 if (!btn) return 'not-found';
-
                 btn.scrollIntoView({block:'center', inline:'center'});
                 btn.click();
-
+            
                 document.documentElement.dataset.travianFasterState = 'clicked';
                 return 'clicked';
             })();
