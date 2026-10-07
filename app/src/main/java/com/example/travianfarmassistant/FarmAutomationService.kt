@@ -3078,7 +3078,7 @@ private fun clickFasterUpgrade() {
     val villageName = builderVillages.getOrNull(builderVillageIndex)?.second
         ?: "Village ${builderVillageIndex + 1}"
 
-    // 1. Ambil & Klik Tombol Faster
+    // 1. Eksekusi klik tombol Faster
     val js = """
         (() => {
             try {
@@ -3087,7 +3087,6 @@ private fun clickFasterUpgrade() {
                     .find(el => isVisible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
                     
                 if (!btn) return 'not-found';
-                
                 btn.scrollIntoView({block:'center', inline:'center'});
                 
                 const clickHandler = btn.getAttribute('onclick');
@@ -3096,8 +3095,6 @@ private fun clickFasterUpgrade() {
                 } else {
                     btn.click();
                 }
-            
-                document.documentElement.dataset.travianFasterState = 'clicked';
                 return 'clicked';
             } catch (e) {
                 return 'error: ' + e.message;
@@ -3110,146 +3107,97 @@ private fun clickFasterUpgrade() {
 
         if (result != "clicked") {
             logEvent("$builderName: $villageName tombol Faster tidak ditemukan — lanjut village")
-            if (townBuilderInProgress) {
-                advanceTownBuilderVillage()
-            } else {
-                goToNextBuilderVillage()
-            }
+            if (townBuilderInProgress) advanceTownBuilderVillage() else goToNextBuilderVillage()
             return@evaluateJavascript
         }
 
-        logEvent("$builderName: $villageName klik Faster — tunggu 10 detik")
+        logEvent("$builderName: $villageName klik Faster — tunggu 5 detik iklan muncul")
 
-        // 2. Tunggu 10 detik setelah klik untuk menyuntikkan script video skipper
+        // 2. Tunggu 5 detik agar pop-up iklan termuat di layar
         handler.postDelayed({
             if (!running || !builderInProgress) return@postDelayed
 
-            // Menyuntikkan script pencari video dengan penanganan Unmute & Seek 29 detik
+            // Suntikkan skrip untuk UNMUTE dan memaksa video BERPUTAR sampai habis secara organik
             view.evaluateJavascript(
-    """
-    (() => {
-        const findVideo = () => {
-            const videos = [...document.querySelectorAll('video')];
-            return videos.find(v => {
-                const src = v.src || '';
-                const isTravianVideo = src.includes('traviangames.com') || v.style.zIndex === '999999';
-                const r = v.getBoundingClientRect();
-                return isTravianVideo && r.width > 0 && r.height > 0;
-            }) || videos[0] || null;
-        };
+                """
+                (() => {
+                    const findVideo = () => {
+                        const videos = [...document.querySelectorAll('video')];
+                        return videos.find(v => {
+                            const src = v.src || '';
+                            const isTravianVideo = src.includes('traviangames.com') || v.style.zIndex === '999999';
+                            const r = v.getBoundingClientRect();
+                            return isTravianVideo && r.width > 0 && r.height > 0;
+                        }) || videos || null;
+                    };
 
-        const video = findVideo();
-        const seekAfterDelay = (target) => {
-            try {
-                target.muted = false; 
-                target.volume = 1.0;
-                target.play().catch(() => {}); 
-            } catch (e) {
-                document.documentElement.dataset.travianVideoAudioError = 'audio-unmute-failed';
-            }
-
-            // Tunggu 4 detik prapemuatan
-            setTimeout(() => {
-                try {
-                    // Ambil durasi total video (misal 33 detik seperti di log)
-                    const duration = target.duration || 30;
-                    
-                    // Potong durasi ke 2 detik sebelum video iklan berakhir secara natural
-                    target.currentTime = duration - 2;
-                    target.play().catch(() => {});
-                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-target';
-
-                    // TANGKAPAN UTAMA: Setelah di-seek, tunggu 3 detik lalu paksa trigger event 'ended'
-                    setTimeout(() => {
+                    const video = findVideo();
+                    if (video) {
                         try {
-                            target.currentTime = duration;
-                            // Kirimkan sinyal buatan ke sistem Travian bahwa video telah tamat diputar
-                            target.dispatchEvent(new Event('ended'));
-                        } catch (e) {}
-                    }, 3000);
-
-                } catch (e) {
-                    document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
-                }
-            }, 4000);
-        };
-
-        if (video) {
-            seekAfterDelay(video);
-            return "found[" + video.currentTime.toFixed(1) + "s / " + (video.duration ? video.duration.toFixed(1) : "unknown") + "s]";
-        }
-
-        const startedAt = Date.now();
-        const timer = setInterval(() => {
-            const found = findVideo();
-            if (found) {
-                clearInterval(timer);
-                seekAfterDelay(found);
-            } else if (Date.now() - startedAt >= 15000) {
-                clearInterval(timer);
-                document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
-            }
-        }, 100);
-        
-        return 'searching-video';
-    })();
-    """.trimIndent()
+                            // Maksa putar lancar dari detik awal
+                            video.muted = false;
+                            video.volume = 1.0;
+                            video.play().catch(() => {});
+                            return "playing[" + video.duration.toFixed(1) + "s]";
+                        } catch (e) {
+                            return "play-error";
+                        }
+                    }
+                    return 'video-not-found-yet';
+                })();
+                """.trimIndent()
             ) { rawCount ->
                 val videoStats = rawCount.orEmpty().trim('"')
-                logEvent("$builderName: $villageName setelah 10 detik — seek ke 29 (video=$videoStats), menunggu auto-redirect game...")
+                logEvent("$builderName: $villageName Iklan Aktif ($videoStats) — Menunggu sistem game melakukan Auto-Redirect (Maks 40 detik)...")
 
-                // 3. MONITORING REDIRECT: Cek perubahan URL secara berkala daripada memakai delay statis
+                // 3. PEMANTAU REDIRECT ALAMI (Ditingkatkan batas toleransinya hingga 40 detik)
                 val checkRedirectHandler = android.os.Handler(android.os.Looper.getMainLooper())
-                var attempts = 0
+                var secondsPassed = 0
                 
                 val checkUrlRunnable = object : Runnable {
                     override fun run() {
                         if (!running || !builderInProgress) return
                         
                         val currentUrl = view.url.orEmpty()
-                        attempts++
+                        secondsPassed++
 
-                        // Jika game Travian sudah otomatis berpindah ke dorf1 atau dorf2, klaim iklan SAH dan BERHASIL!
+                        // Jika URL berpindah ke dorf1 atau dorf2, klaim iklan 100% SUKSES DAN SAH!
                         if (currentUrl.contains("dorf1.php") || currentUrl.contains("dorf2.php")) {
-                            logEvent("$builderName: $villageName Terdeteksi Auto-Redirect Berhasil (${currentUrl.substringAfter("com/")}) — Lanjut Desa!")
+                            logEvent("$builderName: $villageName Terdeteksi Auto-Redirect Berhasil (${currentUrl.substringAfter("com/")}) — Pembangunan selesai, lanjut desa!")
                             
-                            // Reset variabel state builder lama Anda
                             upgradeClickSourceUrl = ""
                             pendingUpgradeUrl = ""
                             pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
                             heroTransferCompleted = false
 
-                            if (townBuilderInProgress) {
-                                advanceTownBuilderVillage()
-                            } else {
-                                goToNextBuilderVillage()
-                            }
-                        } else if (attempts >= 15) { 
-                            // Batas Aman (Timeout): Jika dalam 15 detik game tidak melakukan redirect, paksa pindah
-                            logEvent("$builderName: $villageName Timeout menunggu auto-redirect iklan. Paksa lanjut desa.")
+                            if (townBuilderInProgress) advanceTownBuilderVillage() else goToNextBuilderVillage()
+                        } else if (secondsPassed >= 40) { 
+                            // Batas Toleransi diperpanjang ke 40 detik (karena durasi video iklan asli adalah 30-33 detik)
+                            logEvent("$builderName: $villageName Gagal Redirect setelah 40 detik. Melompati paksa desa.")
                             
                             upgradeClickSourceUrl = ""
                             pendingUpgradeUrl = ""
                             pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
                             heroTransferCompleted = false
                             
-                            if (townBuilderInProgress) {
-                                advanceTownBuilderVillage()
-                            } else {
-                                goToNextBuilderVillage()
-                            }
+                            if (townBuilderInProgress) advanceTownBuilderVillage() else goToNextBuilderVillage()
                         } else {
-                            // Cek kembali status URL 1 detik kemudian
+                            // Cek kembali status setiap 1 detik
                             checkRedirectHandler.postDelayed(this, 1000L)
                         }
                     }
                 }
-                // Memulai loop pengecekan URL aktif
                 checkRedirectHandler.postDelayed(checkUrlRunnable, 1000L)
             }
-        }, 10000L)
+        }, 5000L) // Cukup tunggu 5 detik di awal untuk memicu pencarian video
     }
 }
+
+
+    
+        
+
+
 
 
 
