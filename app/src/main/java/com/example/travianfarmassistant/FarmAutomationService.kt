@@ -3082,20 +3082,38 @@ private fun clickTransferSelected() {
         // 3. Seek video ke detik 29
         // 4. Tunggu 7 detik
         // 5. Next village
-        val js = """
-            (() => {
-            
-const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
-                    .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
-                if (!btn) return 'not-found';
+val js = """
+    (() => {
+        try {
+            // 1. Definisikan fungsi isVisible mandiri agar tidak bergantung pada fungsi luar
+            const isVisible = el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+
+            // 2. Cari tombol berdasarkan class uniknya
+            const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
+                .find(el => isVisible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
                 
-                btn.scrollIntoView({block:'center', inline:'center'});
-                btn.click();
+            if (!btn) return 'not-found';
             
-                document.documentElement.dataset.travianFasterState = 'clicked';
-                return 'clicked';
-            })();
-        """.trimIndent()
+            // 3. Scroll ke tombol
+            btn.scrollIntoView({block:'center', inline:'center'});
+            
+            // 4. Eksekusi fungsi onclick bawaan Travian secara langsung (lebih ampuh daripada .click())
+            const clickHandler = btn.getAttribute('onclick');
+            if (clickHandler) {
+                new Function(clickHandler).call(btn);
+            } else {
+                btn.click(); // Fallback jika onclick inline tiba-tiba tidak ada
+            }
+        
+            document.documentElement.dataset.travianFasterState = 'clicked';
+            return 'clicked';
+        } catch (e) {
+            // Jika ada error/crash di sisi JS, kembalikan teks pesan errornya ke Android
+            return 'error: ' + e.message;
+        }
+    })();
+""".trimIndent()
+
 
         view.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"')
