@@ -404,7 +404,7 @@ class MainActivity : Activity() {
         val savedCredential = CredentialDatabase(this).read()
         // Tampilkan template server agar user cukup mengganti bagian host, misalnya:
         // https://ts20.x2.europe.travian.com
-        val defaultServer = "https://.travian.com"
+        val defaultServer = "https://ts32.x3.europe.travian.com"
         serverInput.setText(savedCredential?.server?.takeIf { it.isNotBlank() } ?: defaultServer)
         usernameInput.setText(savedCredential?.username ?: "TNR#EMBUH")
         passwordInput.setText(savedCredential?.password ?: "Gooner4life!")
