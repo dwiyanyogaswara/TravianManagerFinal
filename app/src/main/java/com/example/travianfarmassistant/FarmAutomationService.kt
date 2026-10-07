@@ -3168,6 +3168,8 @@ private fun clickTransferSelected() {
                                 document.documentElement.dataset.travianVideoPlayResult = 'play-error-' + String(e && e.name || 'unknown');
                             }
 
+                            // Fase 1: video diputar dulu selama 5 detik.
+                            // Fase 2: BARU seek ke detik 29, play lagi, lalu WAJIB tunggu 5 detik.
                             setTimeout(() => {
                                 if (!video.isConnected) {
                                     document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
@@ -3176,23 +3178,44 @@ private fun clickTransferSelected() {
 
                                 try {
                                     video.currentTime = 29;
-                                    // Setelah seek tetap panggil play() sekali lagi sebagai fallback.
-                                    // Playback utama sudah dimulai segera setelah video terdeteksi.
+                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-29';
+                                    document.documentElement.dataset.travianVideoInfo = describeVideo(video);
+
+                                    // Setelah seek ke detik 29, pastikan playback benar-benar berjalan.
                                     try {
                                         const resumePromise = video.play();
                                         if (resumePromise && typeof resumePromise.catch === 'function') {
-                                            resumePromise.catch((e) => {
+                                            resumePromise.then(() => {
+                                                document.documentElement.dataset.travianVideoPlayResult = 'play-after-seek-started';
+                                            }).catch((e) => {
                                                 document.documentElement.dataset.travianVideoPlayResult = 'resume-error-' + String(e && e.name || 'unknown');
                                             });
+                                        } else {
+                                            document.documentElement.dataset.travianVideoPlayResult = 'play-after-seek-requested';
                                         }
                                     } catch (e) {
                                         document.documentElement.dataset.travianVideoPlayResult = 'resume-error-' + String(e && e.name || 'unknown');
                                     }
-                                    document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-waiting-5s';
 
-                                    // Setelah seek + play, tunggu 5 detik lalu lanjut.
+                                    // WAJIB tunggu 5 detik setelah seek ke detik 29.
+                                    // Selama 5 detik ini, jika WebView menghentikan playback,
+                                    // coba play lagi agar video tidak berhenti sebelum timer selesai.
+                                    const keepPlayingUntil = Date.now() + 5000;
+                                    const keepPlaying = setInterval(() => {
+                                        if (!video.isConnected || Date.now() >= keepPlayingUntil) {
+                                            clearInterval(keepPlaying);
+                                            return;
+                                        }
+                                        try {
+                                            if (video.paused || video.ended) {
+                                                if (video.ended) video.currentTime = 29;
+                                                video.play().catch(() => {});
+                                            }
+                                        } catch (_) {}
+                                    }, 250);
+
                                     setTimeout(() => {
+                                        clearInterval(keepPlaying);
                                         document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                                         document.documentElement.dataset.travianVideoSkipResult = 'video-ended';
                                     }, 5000);
@@ -3538,6 +3561,8 @@ private fun clickTransferSelected() {
                                 document.documentElement.dataset.travianVideoPlayResult = 'play-error-' + String(e && e.name || 'unknown');
                             }
 
+                            // Fase 1: video diputar dulu selama 5 detik.
+                            // Fase 2: BARU seek ke detik 29, play lagi, lalu WAJIB tunggu 5 detik.
                             setTimeout(() => {
                                 if (!video.isConnected) {
                                     document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
@@ -3546,23 +3571,44 @@ private fun clickTransferSelected() {
 
                                 try {
                                     video.currentTime = 29;
-                                    // Setelah seek tetap panggil play() sekali lagi sebagai fallback.
-                                    // Playback utama sudah dimulai segera setelah video terdeteksi.
+                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-29';
+                                    document.documentElement.dataset.travianVideoInfo = describeVideo(video);
+
+                                    // Setelah seek ke detik 29, pastikan playback benar-benar berjalan.
                                     try {
                                         const resumePromise = video.play();
                                         if (resumePromise && typeof resumePromise.catch === 'function') {
-                                            resumePromise.catch((e) => {
+                                            resumePromise.then(() => {
+                                                document.documentElement.dataset.travianVideoPlayResult = 'play-after-seek-started';
+                                            }).catch((e) => {
                                                 document.documentElement.dataset.travianVideoPlayResult = 'resume-error-' + String(e && e.name || 'unknown');
                                             });
+                                        } else {
+                                            document.documentElement.dataset.travianVideoPlayResult = 'play-after-seek-requested';
                                         }
                                     } catch (e) {
                                         document.documentElement.dataset.travianVideoPlayResult = 'resume-error-' + String(e && e.name || 'unknown');
                                     }
-                                    document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-waiting-5s';
 
-                                    // Setelah seek + play, tunggu 5 detik lalu lanjut.
+                                    // WAJIB tunggu 5 detik setelah seek ke detik 29.
+                                    // Selama 5 detik ini, jika WebView menghentikan playback,
+                                    // coba play lagi agar video tidak berhenti sebelum timer selesai.
+                                    const keepPlayingUntil = Date.now() + 5000;
+                                    const keepPlaying = setInterval(() => {
+                                        if (!video.isConnected || Date.now() >= keepPlayingUntil) {
+                                            clearInterval(keepPlaying);
+                                            return;
+                                        }
+                                        try {
+                                            if (video.paused || video.ended) {
+                                                if (video.ended) video.currentTime = 29;
+                                                video.play().catch(() => {});
+                                            }
+                                        } catch (_) {}
+                                    }, 250);
+
                                     setTimeout(() => {
+                                        clearInterval(keepPlaying);
                                         document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                                         document.documentElement.dataset.travianVideoSkipResult = 'video-ended';
                                     }, 5000);
@@ -4280,7 +4326,7 @@ private fun clickTransferSelected() {
                 }
                 message.startsWith("Town Builder:") && message.endsWith("faster success") -> message 
                 message.startsWith("Town Builder:") && message.endsWith("video not found") -> message 
-                message.startsWith("Town Builder:") && message.contains("video") -> message 
+                message.startsWith("Town Builder:")  -> message 
                 else -> return
             }
         } else {
@@ -4302,7 +4348,7 @@ private fun clickTransferSelected() {
                 message == "BOT OFF" -> "BOT OFF"
                 message.startsWith("Resource Builder:") && message.endsWith("faster success") -> message 
                 message.startsWith("Resource Builder:") && message.endsWith("video not found") -> message 
-                message.startsWith("Resource Builder:") && message.contains("video") -> message 
+                message.startsWith("Resource Builder:")  -> message 
                 else -> return
             }
         }
