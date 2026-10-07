@@ -3149,6 +3149,15 @@ val js = """
                         };
                         const video = findVideo();
                         const seekAfterDelay = (target) => {
+                        try {
+                                target.muted = false; 
+                                target.volume = 1.0;
+                                target.play().catch(() => {}); // Paksa putar dengan suara jika sempat terhenti
+                            } catch (e) {
+                                document.documentElement.dataset.travianVideoAudioError = 'audio-unmute-failed';
+                            }
+
+                            
                             setTimeout(() => {
                                 try {
                                     target.currentTime = 29;
