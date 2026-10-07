@@ -4350,7 +4350,7 @@ private fun clickTransferSelected() {
                 }
                 message.startsWith("Town Builder:") && message.endsWith("faster success") -> message 
                 message.startsWith("Town Builder:") && message.endsWith("video not found") -> message 
-                message.startsWith("Town Builder:") && message.contains("video") -> message  
+                message.startsWith("Town Builder:") && message.contains("video") -> message 
                 message.startsWith("Town Builder:") -> message 
                 else -> return
             }
