@@ -3085,10 +3085,10 @@ private fun clickTransferSelected() {
         val js = """
             (() => {
             
-
-                const btn = [...document.querySelectorAll('button.videoFeatureButton')]
+const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
                     .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
                 if (!btn) return 'not-found';
+                
                 btn.scrollIntoView({block:'center', inline:'center'});
                 btn.click();
             
@@ -3120,21 +3120,47 @@ private fun clickTransferSelected() {
                 view.evaluateJavascript(
                     """
                     (() => {
-                        const videos = [...document.querySelectorAll('video')];
-                        let count = 0;
                         
-                        videos.forEach(video => {
-                            try {
-                                video.play();
-                                
-                                count++;
-                            } catch (_) {}
-                        });
-
-                        document.documentElement.dataset.travianFasterState = 'seeked-29';
-                        return String(count);
+                        const findVideo = () => {
+                            const videos = [...document.querySelectorAll('video')];
+                            return videos.find(v => {
+                                const r = v.getBoundingClientRect();
+                                return r.width > 0 && r.height > 0;
+                            }) || videos[0] || null;
+                        };
+                        const video = findVideo();
+                        const seekAfterDelay = (target) => {
+                            setTimeout(() => {
+                                try {
+                                    target.currentTime = 29;
+                                    target.play().catch(() => {});
+                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-29';
+                                } catch (e) {
+                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
+                                }
+                            }, 4000);
+                        };
+                        if (video) {
+                            seekAfterDelay(video);
+                            return 'video-found-waiting-4s';
+                        }
+                        const startedAt = Date.now();
+                        const timer = setInterval(() => {
+                            const found = findVideo();
+                            if (found) {
+                                clearInterval(timer);
+                                seekAfterDelay(found);
+                            } else if (Date.now() - startedAt >= 15000) {
+                                clearInterval(timer);
+                                document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
+                            }
+                        }, 100);
+                        
+        document.documentElement.dataset.travianFasterState = 'seeked-29';
+                        return String(1);
                     })();
-                    """.trimIndent()
+                """.trimIndent()
+                logEvent("Town Builder: $name klik Upgrade 25% faster — menunggu video muncul")
                 ) { rawCount ->
                     val count = rawCount.orEmpty().trim('"')
                     logEvent("$builderName: $villageName setelah 10 detik — seek ke 29 (video=$count), tunggu 7 detik")
