@@ -3067,36 +3067,34 @@ private fun clickTransferSelected() {
         if (!running || !builderInProgress) return
 
         val view = automationWebView() ?: return
-        val sourceUrl = view.url.orEmpty()
-        if (sourceUrl.isBlank()) return
+        if (view.url.orEmpty().isBlank()) return
 
         builderStage = "WAIT_VIDEO_SKIP"
-        upgradeClickSourceUrl = sourceUrl
+        upgradeClickSourceUrl = view.url.orEmpty()
 
         val builderName = if (townBuilderInProgress) "Town Builder" else "Resource Builder"
         val villageName = builderVillages.getOrNull(builderVillageIndex)?.second
             ?: "Village ${builderVillageIndex + 1}"
 
+        // SIMPLE FLOW:
+        // 1. Klik Faster
+        // 2. Tunggu 10 detik
+        // 3. Seek video ke detik 29
+        // 4. Tunggu 7 detik
+        // 5. Next village
         val js = """
             (() => {
-                const visible = el => {
-                    if (!el) return false;
-                    const s = getComputedStyle(el);
-                    const r = el.getBoundingClientRect();
-                    return s.display !== 'none' &&
-                           s.visibility !== 'hidden' &&
-                           s.opacity !== '0' &&
-                           r.width > 0 &&
-                           r.height > 0;
-                };
-
                 const btn = [...document.querySelectorAll(
                     'button.textButtonV1.purple.build.videoFeatureButton'
-                )].find(el =>
-                    visible(el) &&
-                    !el.disabled &&
-                    el.getAttribute('aria-disabled') !== 'true'
-                );
+                )].find(el => {
+                    const r = el.getBoundingClientRect();
+                    const st = getComputedStyle(el);
+                    return !el.disabled &&
+                           st.display !== 'none' &&
+                           st.visibility !== 'hidden' &&
+                           r.width > 0 &&
+                           r.height > 0;
+                });
 
                 if (!btn) return 'not-found';
 
@@ -3104,113 +3102,6 @@ private fun clickTransferSelected() {
                 btn.click();
 
                 document.documentElement.dataset.travianFasterState = 'clicked';
-                document.documentElement.dataset.travianFasterTime = '';
-                document.documentElement.dataset.travianFasterPlay = '';
-
-                const findVideo = () => {
-                    const list = [...document.querySelectorAll('video')];
-                    return list.find(v => {
-                        const r = v.getBoundingClientRect();
-                        return r.width > 0 && r.height > 0;
-                    }) || list[0] || null;
-                };
-
-                const start = Date.now();
-
-                const waitVideo = setInterval(() => {
-                    const video = findVideo();
-
-                    if (!video) {
-                        if (Date.now() - start > 15000) {
-                            clearInterval(waitVideo);
-                            document.documentElement.dataset.travianFasterState = 'video-not-found';
-                        }
-                        return;
-                    }
-
-                    clearInterval(waitVideo);
-
-                    try {
-                        video.autoplay = true;
-                        video.playsInline = true;
-
-                        // WebView lebih konsisten mengizinkan autoplay bila muted.
-                        video.muted = true;
-                        video.volume = 0;
-
-                        const p = video.play();
-                        if (p && p.then) {
-                            p.then(() => {
-                                document.documentElement.dataset.travianFasterPlay = 'started';
-                            }).catch(e => {
-                                document.documentElement.dataset.travianFasterPlay =
-                                    'error-' + String(e && e.name || 'unknown');
-                            });
-                        }
-                    } catch (e) {
-                        document.documentElement.dataset.travianFasterPlay =
-                            'error-' + String(e && e.name || 'unknown');
-                    }
-
-                    document.documentElement.dataset.travianFasterState = 'waiting-10s';
-
-                    // Tepat 10 detik setelah video ditemukan.
-                    setTimeout(() => {
-                        if (!video.isConnected) {
-                            document.documentElement.dataset.travianFasterState = 'video-not-found';
-                            return;
-                        }
-
-                        try {
-                            video.currentTime = 29;
-                            document.documentElement.dataset.travianFasterState = 'seeking-29';
-
-                            try {
-                                video.play().catch(() => {});
-                            } catch (_) {}
-
-                            // Verifikasi currentTime benar-benar pindah ke sekitar detik 29.
-                            const verifyStart = Date.now();
-
-                            const verifySeek = setInterval(() => {
-                                if (!video.isConnected) {
-                                    clearInterval(verifySeek);
-                                    document.documentElement.dataset.travianFasterState = 'video-not-found';
-                                    return;
-                                }
-
-                                const ct = Number(video.currentTime || 0);
-                                document.documentElement.dataset.travianFasterTime = String(ct);
-
-                                if (ct >= 28.5) {
-                                    clearInterval(verifySeek);
-                                    document.documentElement.dataset.travianFasterState = 'seeked-29';
-
-                                    // Setelah posisi 29 benar-benar tercapai,
-                                    // tunggu 7 detik sebelum dianggap selesai.
-                                    setTimeout(() => {
-                                        if (!video.isConnected) {
-                                            document.documentElement.dataset.travianFasterState = 'video-not-found';
-                                            return;
-                                        }
-
-                                        document.documentElement.dataset.travianFasterTime =
-                                            String(Number(video.currentTime || 0));
-                                        document.documentElement.dataset.travianFasterState = 'done';
-                                    }, 7000);
-
-                                } else if (Date.now() - verifyStart > 5000) {
-                                    clearInterval(verifySeek);
-                                    document.documentElement.dataset.travianFasterState = 'seek-error';
-                                }
-                            }, 100);
-
-                        } catch (e) {
-                            document.documentElement.dataset.travianFasterState = 'seek-error';
-                        }
-                    }, 10000);
-                }, 100);
-
                 return 'clicked';
             })();
         """.trimIndent()
@@ -3220,7 +3111,6 @@ private fun clickTransferSelected() {
 
             if (result != "clicked") {
                 logEvent("$builderName: $villageName tombol Faster tidak ditemukan — lanjut village")
-
                 if (townBuilderInProgress) {
                     advanceTownBuilderVillage()
                 } else {
@@ -3229,72 +3119,53 @@ private fun clickTransferSelected() {
                 return@evaluateJavascript
             }
 
-            logEvent("$builderName: $villageName klik Faster — tunggu 10 detik, seek 29, verifikasi, tunggu 7 detik")
+            logEvent("$builderName: $villageName klik Faster — tunggu 10 detik")
 
-            val checkFaster = object : Runnable {
-                override fun run() {
-                    if (!running || !builderInProgress) return
+            // Jangan jalankan proses builder lain selama video.
+            handler.postDelayed({
+                if (!running || !builderInProgress) return@postDelayed
 
-                    view.evaluateJavascript(
-                        "JSON.stringify({" +
-                            "state:document.documentElement.dataset.travianFasterState||''," +
-                            "time:document.documentElement.dataset.travianFasterTime||''," +
-                            "play:document.documentElement.dataset.travianFasterPlay||''" +
-                        "})"
-                    ) { rawState ->
-                        val json = rawState.orEmpty()
-                            .trim('"')
-                            .replace("\\\"", "\"")
+                // Tepat 10 detik setelah klik: seek video ke detik 29.
+                view.evaluateJavascript(
+                    """
+                    (() => {
+                        const videos = [...document.querySelectorAll('video')];
+                        let count = 0;
 
-                        val state = Regex("\"state\":\"([^\"]*)\"")
-                            .find(json)?.groupValues?.getOrNull(1).orEmpty()
+                        videos.forEach(video => {
+                            try {
+                                video.currentTime = 29;
+                                count++;
+                            } catch (_) {}
+                        });
 
-                        val time = Regex("\"time\":\"([^\"]*)\"")
-                            .find(json)?.groupValues?.getOrNull(1).orEmpty()
+                        document.documentElement.dataset.travianFasterState = 'seeked-29';
+                        return String(count);
+                    })();
+                    """.trimIndent()
+                ) { rawCount ->
+                    val count = rawCount.orEmpty().trim('"')
+                    logEvent("$builderName: $villageName setelah 10 detik — seek ke 29 (video=$count), tunggu 7 detik")
 
-                        val play = Regex("\"play\":\"([^\"]*)\"")
-                            .find(json)?.groupValues?.getOrNull(1).orEmpty()
+                    // Setelah seek, tunggu 7 detik lalu langsung next village.
+                    handler.postDelayed({
+                        if (!running || !builderInProgress) return@postDelayed
 
-                        when (state) {
-                            "done" -> {
-                                logEvent("$builderName: $villageName Faster OK — currentTime=$time play=$play — lanjut village")
+                        logEvent("$builderName: $villageName Faster selesai — lanjut village")
 
-                                upgradeClickSourceUrl = ""
-                                pendingUpgradeUrl = ""
-                                pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
-                                heroTransferCompleted = false
+                        upgradeClickSourceUrl = ""
+                        pendingUpgradeUrl = ""
+                        pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+                        heroTransferCompleted = false
 
-                                if (townBuilderInProgress) {
-                                    advanceTownBuilderVillage()
-                                } else {
-                                    goToNextBuilderVillage()
-                                }
-                            }
-
-                            "video-not-found", "seek-error" -> {
-                                logEvent("$builderName: $villageName Faster GAGAL — state=$state currentTime=$time play=$play — lanjut village")
-
-                                upgradeClickSourceUrl = ""
-                                pendingUpgradeUrl = ""
-                                pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
-                                heroTransferCompleted = false
-
-                                if (townBuilderInProgress) {
-                                    advanceTownBuilderVillage()
-                                } else {
-                                    goToNextBuilderVillage()
-                                }
-                            }
-
-                            else -> {
-                                handler.postDelayed(this, 500L)
-                            }
+                        if (townBuilderInProgress) {
+                            advanceTownBuilderVillage()
+                        } else {
+                            goToNextBuilderVillage()
                         }
-                    }
+                    }, 7000L)
                 }
-            }
-
-            handler.postDelayed(checkFaster, 500L)
+            }, 10000L)
         }
     }
 
