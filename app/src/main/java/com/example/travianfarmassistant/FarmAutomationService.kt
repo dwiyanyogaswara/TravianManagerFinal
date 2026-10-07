@@ -3252,7 +3252,8 @@ private fun clickTransferSelected() {
                     val diag = rawResult.orEmpty().trim('"').replace("\\\"", "\"")
                     logEvent("Town Builder: $name DOM video check = $diag")
 
-                    val checkVideo: Runnable = object : Runnable {
+                    lateinit var checkVideo: Runnable
+                    checkVideo = object : Runnable {
                         override fun run() {
                             if (!running || !townBuilderInProgress) return
 
