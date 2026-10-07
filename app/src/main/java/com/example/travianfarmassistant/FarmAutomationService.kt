@@ -3157,7 +3157,7 @@ val js = """
                                 } catch (e) {
                                     document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
                                 }
-                            }, 4000);
+                            }, 6000);
                         };
                         if (video) {
                             seekAfterDelay(video);
