@@ -3126,62 +3126,74 @@ private fun clickFasterUpgrade() {
 
             // Menyuntikkan script pencari video dengan penanganan Unmute & Seek 29 detik
             view.evaluateJavascript(
-                """
-                (() => {
-                    const findVideo = () => {
-                        const videos = [...document.querySelectorAll('video')];
-                        return videos.find(v => {
-                            const src = v.src || '';
-                            const isTravianVideo = src.includes('traviangames.com') || v.style.zIndex === '999999';
-                            const r = v.getBoundingClientRect();
-                            return isTravianVideo && r.width > 0 && r.height > 0;
-                        }) || videos[0] || null;
-                    };
+    """
+    (() => {
+        const findVideo = () => {
+            const videos = [...document.querySelectorAll('video')];
+            return videos.find(v => {
+                const src = v.src || '';
+                const isTravianVideo = src.includes('traviangames.com') || v.style.zIndex === '999999';
+                const r = v.getBoundingClientRect();
+                return isTravianVideo && r.width > 0 && r.height > 0;
+            }) || videos[0] || null;
+        };
 
-                    const video = findVideo();
-                    const seekAfterDelay = (target) => {
-                        // ATUR DI SINI: Unmute instan dilakukan SEBELUM delay berjalan
-                        try {
-                            target.muted = false; 
-                            target.volume = 1.0;
-                            target.play().catch(() => {}); 
-                        } catch (e) {
-                            document.documentElement.dataset.travianVideoAudioError = 'audio-unmute-failed';
-                        }
+        const video = findVideo();
+        const seekAfterDelay = (target) => {
+            try {
+                target.muted = false; 
+                target.volume = 1.0;
+                target.play().catch(() => {}); 
+            } catch (e) {
+                document.documentElement.dataset.travianVideoAudioError = 'audio-unmute-failed';
+            }
 
-                        // Tunggu 4 detik (atau sesuaikan kebutuhan) untuk melompat ke detik 29
-                        setTimeout(() => {
-                            try {
-                                target.currentTime = 29;
-                                target.play().catch(() => {});
-                                document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-29';
-                            } catch (e) {
-                                document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
-                            }
-                        }, 4000);
-                    };
-
-                    if (video) {
-                        seekAfterDelay(video);
-                        return "found[" + video.currentTime.toFixed(1) + "s / " + (video.duration ? video.duration.toFixed(1) : "unknown") + "s]";
-                    }
-
-                    // Loop Cadangan mencari video jika belum siap (Perbaikan kode yang terpotong)
-                    const startedAt = Date.now();
-                    const timer = setInterval(() => {
-                        const found = findVideo();
-                        if (found) {
-                            clearInterval(timer);
-                            seekAfterDelay(found);
-                        } else if (Date.now() - startedAt >= 15000) {
-                            clearInterval(timer);
-                            document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
-                        }
-                    }, 100);
+            // Tunggu 4 detik prapemuatan
+            setTimeout(() => {
+                try {
+                    // Ambil durasi total video (misal 33 detik seperti di log)
+                    const duration = target.duration || 30;
                     
-                    return 'searching-video';
-                })();
-                """.trimIndent()
+                    // Potong durasi ke 2 detik sebelum video iklan berakhir secara natural
+                    target.currentTime = duration - 2;
+                    target.play().catch(() => {});
+                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-target';
+
+                    // TANGKAPAN UTAMA: Setelah di-seek, tunggu 3 detik lalu paksa trigger event 'ended'
+                    setTimeout(() => {
+                        try {
+                            target.currentTime = duration;
+                            // Kirimkan sinyal buatan ke sistem Travian bahwa video telah tamat diputar
+                            target.dispatchEvent(new Event('ended'));
+                        } catch (e) {}
+                    }, 3000);
+
+                } catch (e) {
+                    document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
+                }
+            }, 4000);
+        };
+
+        if (video) {
+            seekAfterDelay(video);
+            return "found[" + video.currentTime.toFixed(1) + "s / " + (video.duration ? video.duration.toFixed(1) : "unknown") + "s]";
+        }
+
+        const startedAt = Date.now();
+        const timer = setInterval(() => {
+            const found = findVideo();
+            if (found) {
+                clearInterval(timer);
+                seekAfterDelay(found);
+            } else if (Date.now() - startedAt >= 15000) {
+                clearInterval(timer);
+                document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
+            }
+        }, 100);
+        
+        return 'searching-video';
+    })();
+    """.trimIndent()
             ) { rawCount ->
                 val videoStats = rawCount.orEmpty().trim('"')
                 logEvent("$builderName: $villageName setelah 10 detik — seek ke 29 (video=$videoStats), menunggu auto-redirect game...")
