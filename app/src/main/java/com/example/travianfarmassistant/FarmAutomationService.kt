@@ -3154,10 +3154,14 @@ private fun clickTransferSelected() {
 
                                 try {
                                     video.currentTime = 29;
+                                    // Mekanisme lama yang terbukti pernah berhasil:
+                                    // setelah seek, panggil play() agar video benar-benar
+                                    // melanjutkan playback di WebView background.
+                                    try { video.play().catch(() => {}); } catch (_) {}
                                     document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                                     document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-waiting-5s';
 
-                                    // Setelah seek, cukup tunggu 5 detik lalu anggap selesai.
+                                    // Setelah seek + play, tunggu 5 detik lalu lanjut.
                                     setTimeout(() => {
                                         document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                                         document.documentElement.dataset.travianVideoSkipResult = 'video-ended';
@@ -3485,10 +3489,14 @@ private fun clickTransferSelected() {
 
                                 try {
                                     video.currentTime = 29;
+                                    // Mekanisme lama yang terbukti pernah berhasil:
+                                    // setelah seek, panggil play() agar video benar-benar
+                                    // melanjutkan playback di WebView background.
+                                    try { video.play().catch(() => {}); } catch (_) {}
                                     document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                                     document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-waiting-5s';
 
-                                    // Setelah seek, tunggu 5 detik lalu lanjut.
+                                    // Setelah seek + play, tunggu 5 detik lalu lanjut.
                                     setTimeout(() => {
                                         document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                                         document.documentElement.dataset.travianVideoSkipResult = 'video-ended';
@@ -4202,7 +4210,6 @@ private fun clickTransferSelected() {
                 message.startsWith("Town Builder:") && message.endsWith("faster success") -> message 
                 message.startsWith("Town Builder:") && message.endsWith("video not found") -> message 
                 message.startsWith("Town Builder:") && message.contains("video") -> message 
-                message.startsWith("Town Builder:") -> message 
                 else -> return
             }
         } else {
@@ -4225,7 +4232,6 @@ private fun clickTransferSelected() {
                 message.startsWith("Resource Builder:") && message.endsWith("faster success") -> message 
                 message.startsWith("Resource Builder:") && message.endsWith("video not found") -> message 
                 message.startsWith("Resource Builder:") && message.contains("video") -> message 
-                message.startsWith("Resource Builder:") -> message 
                 else -> return
             }
         }
