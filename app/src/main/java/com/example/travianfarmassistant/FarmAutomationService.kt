@@ -3275,7 +3275,7 @@ private fun clickTransferSelected() {
                                 val progress = Regex("\"progress\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
 
                                 when {
-                                    state == "video-ended" -> {
+                                    state == state == "video-ended" -> {
                                         logEvent("Town Builder: $name VIDEO ENDED — $info")
                                         logEvent("Town Builder: $name video benar-benar selesai — lanjut village berikutnya")
                                         upgradeClickSourceUrl = ""
@@ -3304,17 +3304,17 @@ private fun clickTransferSelected() {
                                         advanceTownBuilderVillage()
                                     }
 
-                                    state == "video-play-success" -> {
+                                    state == state == "video-play-success" -> {
                                         logEvent("Town Builder: $name VIDEO PLAY() SUCCESS — $info")
                                         handler.postDelayed(checkVideo, 250L)
                                     }
 
-                                    state == "video-progress" -> {
+                                    state == state == "video-progress" -> {
                                         logEvent("Town Builder: $name VIDEO PROGRESS — $progress")
                                         handler.postDelayed(checkVideo, 250L)
                                     }
 
-                                    state == "video-seeked" -> {
+                                    state == state == "video-seeked" -> {
                                         logEvent("Town Builder: $name VIDEO SEEK → akhir video — $info")
                                         handler.postDelayed(checkVideo, 250L)
                                     }
@@ -3663,23 +3663,23 @@ private fun clickTransferSelected() {
                                         builderStage = "ADVANCING"
                                         goToNextBuilderVillage()
                                     }
-                                    "video-play-start" -> {
+                                    state == "video-play-start" -> {
                                         logEvent("Resource Builder: $name VIDEO PLAY() START — $info")
                                         handler.postDelayed(this, 250L)
                                     }
-                                    "video-play-success" -> {
+                                    state == "video-play-success" -> {
                                         logEvent("Resource Builder: $name VIDEO PLAY() SUCCESS — $info")
                                         handler.postDelayed(this, 250L)
                                     }
-                                    "video-seeked" -> {
+                                    state == "video-seeked" -> {
                                         logEvent("Resource Builder: $name VIDEO SEEK → akhir video — $info")
                                         handler.postDelayed(this, 250L)
                                     }
-                                    "video-progress" -> {
+                                    state == "video-progress" -> {
                                         logEvent("Resource Builder: $name VIDEO PROGRESS — $info")
                                         handler.postDelayed(this, 250L)
                                     }
-                                    "video-ended" -> {
+                                    state == "video-ended" -> {
                                         logEvent("Resource Builder: $name VIDEO ENDED — $info")
                                         upgradeClickSourceUrl = ""
                                         pendingUpgradeUrl = ""
@@ -3688,12 +3688,12 @@ private fun clickTransferSelected() {
                                         logEvent("Resource Builder: $name upgrade faster success")
                                         goToNextBuilderVillage()
                                     }
-                                    "video-not-found",
-                                    "video-seek-error",
-                                    "video-playback-paused",
-                                    "video-playback-error",
-                                    "video-timeout",
-                                    "video-invalid-duration" -> {
+                                    state == "video-not-found" ||
+                                        state == "video-seek-error" ||
+                                        state == "video-playback-paused" ||
+                                        state == "video-playback-error" ||
+                                        state == "video-timeout" ||
+                                        state == "video-invalid-duration" -> {
                                         logEvent("Resource Builder: $name VIDEO PLAYBACK GAGAL — state=$state info=$info")
                                         logEvent("Resource Builder: $name video tidak selesai — lanjut village berikutnya")
                                         upgradeClickSourceUrl = ""
