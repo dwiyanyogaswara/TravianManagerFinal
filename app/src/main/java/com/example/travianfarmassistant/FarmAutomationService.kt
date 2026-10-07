@@ -3131,9 +3131,10 @@ private fun clickTransferSelected() {
                     (() => {
                         const videos = [...document.querySelectorAll('video')];
                         let count = 0;
-
+                        
                         videos.forEach(video => {
                             try {
+                                video.play();
                                 video.currentTime = 29;
                                 count++;
                             } catch (_) {}
