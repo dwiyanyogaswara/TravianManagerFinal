@@ -3135,7 +3135,7 @@ private fun clickTransferSelected() {
                         videos.forEach(video => {
                             try {
                                 video.play();
-                                video.currentTime = 29;
+                                
                                 count++;
                             } catch (_) {}
                         });
@@ -3164,9 +3164,9 @@ private fun clickTransferSelected() {
                         } else {
                             goToNextBuilderVillage()
                         }
-                    }, 7000L)
+                    }, 5000L)
                 }
-            }, 10000L)
+            }, 40000L)
         }
     }
 
