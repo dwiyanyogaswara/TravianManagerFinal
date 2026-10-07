@@ -3064,171 +3064,182 @@ private fun clickTransferSelected() {
         updateNotification("Refresh Village setelah CICLE END | Next Run ${timeFormat.format(Date(nextAt))}")
     }
 
-    private fun clickFasterUpgrade() {
-        if (!running || !builderInProgress) return
+    
+private fun clickFasterUpgrade() {
+    if (!running || !builderInProgress) return
 
-        val view = automationWebView() ?: return
-        if (view.url.orEmpty().isBlank()) return
+    val view = automationWebView() ?: return
+    if (view.url.orEmpty().isBlank()) return
 
-        builderStage = "WAIT_VIDEO_SKIP"
-        upgradeClickSourceUrl = view.url.orEmpty()
+    builderStage = "WAIT_VIDEO_SKIP"
+    upgradeClickSourceUrl = view.url.orEmpty()
 
-        val builderName = if (townBuilderInProgress) "Town Builder" else "Resource Builder"
-        val villageName = builderVillages.getOrNull(builderVillageIndex)?.second
-            ?: "Village ${builderVillageIndex + 1}"
+    val builderName = if (townBuilderInProgress) "Town Builder" else "Resource Builder"
+    val villageName = builderVillages.getOrNull(builderVillageIndex)?.second
+        ?: "Village ${builderVillageIndex + 1}"
 
-        // SIMPLE FLOW:
-        // 1. Klik Faster
-        // 2. Tunggu 10 detik
-        // 3. Seek video ke detik 29
-        // 4. Tunggu 7 detik
-        // 5. Next village
-val js = """
-    (() => {
-        try {
-            // 1. Definisikan fungsi isVisible mandiri agar tidak bergantung pada fungsi luar
-            const isVisible = el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
-
-            // 2. Cari tombol berdasarkan class uniknya
-            const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
-                .find(el => isVisible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+    // 1. Ambil & Klik Tombol Faster
+    val js = """
+        (() => {
+            try {
+                const isVisible = el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+                const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
+                    .find(el => isVisible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+                    
+                if (!btn) return 'not-found';
                 
-            if (!btn) return 'not-found';
-            
-            // 3. Scroll ke tombol
-            btn.scrollIntoView({block:'center', inline:'center'});
-            
-            // 4. Eksekusi fungsi onclick bawaan Travian secara langsung (lebih ampuh daripada .click())
-            const clickHandler = btn.getAttribute('onclick');
-            if (clickHandler) {
-                new Function(clickHandler).call(btn);
-            } else {
-                btn.click(); // Fallback jika onclick inline tiba-tiba tidak ada
-            }
-        
-            document.documentElement.dataset.travianFasterState = 'clicked';
-            return 'clicked';
-        } catch (e) {
-            // Jika ada error/crash di sisi JS, kembalikan teks pesan errornya ke Android
-            return 'error: ' + e.message;
-        }
-    })();
-""".trimIndent()
-
-
-        view.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"')
-
-            if (result != "clicked") {
-                logEvent("$builderName: $villageName tombol Faster tidak ditemukan — lanjut village")
-                if (townBuilderInProgress) {
-                    advanceTownBuilderVillage()
+                btn.scrollIntoView({block:'center', inline:'center'});
+                
+                const clickHandler = btn.getAttribute('onclick');
+                if (clickHandler) {
+                    new Function(clickHandler).call(btn);
                 } else {
-                    goToNextBuilderVillage()
+                    btn.click();
                 }
-                return@evaluateJavascript
+            
+                document.documentElement.dataset.travianFasterState = 'clicked';
+                return 'clicked';
+            } catch (e) {
+                return 'error: ' + e.message;
             }
+        })();
+    """.trimIndent()
 
-            logEvent("$builderName: $villageName klik Faster — tunggu 10 detik")
+    view.evaluateJavascript(js) { raw ->
+        val result = raw.orEmpty().trim('"')
 
-            // Jangan jalankan proses builder lain selama video.
-            handler.postDelayed({
-                if (!running || !builderInProgress) return@postDelayed
-
-                // Tepat 10 detik setelah klik: seek video ke detik 29.
-                view.evaluateJavascript(
-                    """
-                    (() => {
-                        const findVideo = () => {
-    // Cari video yang bersumber dari traviangames atau memiliki z-index iklan tinggi
-    const videos = [...document.querySelectorAll('video')];
-    return videos.find(v => {
-        const src = v.src || '';
-        const isTravianVideo = src.includes('traviangames.com') || v.style.zIndex === '999999';
-        const r = v.getBoundingClientRect();
-        return isTravianVideo && r.width > 0 && r.height > 0;
-    }) || videos[0] || null;
-};
-
-                        
-                        const video = findVideo();
-                        const seekAfterDelay = (target) => {
-                        try {
-                                target.muted = false; 
-                                target.volume = 1.0;
-                                target.play().catch(() => {}); // Paksa putar dengan suara jika sempat terhenti
-                            } catch (e) {
-                                document.documentElement.dataset.travianVideoAudioError = 'audio-unmute-failed';
-                            }
-
-                            
-                            setTimeout(() => {
-                                try {
-                                    target.currentTime = 29;
-                                    target.play().catch(() => {});
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-29';
-                                } catch (e) {
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
-                                }
-                            }, 6000);
-                        };
-                        if (video) {
-                            seekAfterDelay(video);
-                            return 'video-found-waiting-4s';
-                        }
-                        const startedAt = Date.now();
-                        const timer = setInterval(() => {
-                            const found = findVideo();
-                            if (found) {
-                                clearInterval(timer);
-                                seekAfterDelay(found);
-                            } else if (Date.now() - startedAt >= 15000) {
-                                clearInterval(timer);
-                                document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
-                            }
-                        }, 100);
-                        
-        document.documentElement.dataset.travianFasterState = 'seeked-29';
-                        return String(1);
-                    })();
-                """.trimIndent()
-    
-                ) { rawCount ->
-                    val count = rawCount.orEmpty().trim('"')
-                    logEvent("$builderName: $villageName setelah 10 detik — seek ke 29 (video=$count), tunggu 7 detik")
-// 1. Ambil URL halaman WebView saat ini sebelum pindah desa
-    val currentUrl = view.url.orEmpty()
-    
-    // 2. Cetak Log gabungan baru: Menampilkan Durasi Video + Tautan URL Aktif
-    logEvent("$builderName: $villageName URL saat ini: $currentUrl")
-
-                    // Setelah seek, tunggu 7 detik lalu langsung next village.
-                    handler.postDelayed({
-                        if (!running || !builderInProgress) return@postDelayed
-                        
-// 1. Ambil URL halaman WebView saat ini sebelum pindah desa
-    val currentUrl2 = view.url.orEmpty()
-    
-    // 2. Cetak Log gabungan baru: Menampilkan Durasi Video + Tautan URL Aktif
-    logEvent("$builderName: $villageName URL saat ini: $currentUrl2")
-
-                        logEvent("$builderName: $villageName Faster selesai — lanjut village")
-
-                        upgradeClickSourceUrl = ""
-                        pendingUpgradeUrl = ""
-                        pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
-                        heroTransferCompleted = false
-
-                        if (townBuilderInProgress) {
-                            advanceTownBuilderVillage()
-                        } else {
-                            goToNextBuilderVillage()
-                        }
-                    }, 7000L)
-                }
-            }, 10000L)
+        if (result != "clicked") {
+            logEvent("$builderName: $villageName tombol Faster tidak ditemukan — lanjut village")
+            if (townBuilderInProgress) {
+                advanceTownBuilderVillage()
+            } else {
+                goToNextBuilderVillage()
+            }
+            return@evaluateJavascript
         }
+
+        logEvent("$builderName: $villageName klik Faster — tunggu 10 detik")
+
+        // 2. Tunggu 10 detik setelah klik untuk menyuntikkan script video skipper
+        handler.postDelayed({
+            if (!running || !builderInProgress) return@postDelayed
+
+            // Menyuntikkan script pencari video dengan penanganan Unmute & Seek 29 detik
+            view.evaluateJavascript(
+                """
+                (() => {
+                    const findVideo = () => {
+                        const videos = [...document.querySelectorAll('video')];
+                        return videos.find(v => {
+                            const src = v.src || '';
+                            const isTravianVideo = src.includes('traviangames.com') || v.style.zIndex === '999999';
+                            const r = v.getBoundingClientRect();
+                            return isTravianVideo && r.width > 0 && r.height > 0;
+                        }) || videos[0] || null;
+                    };
+
+                    const video = findVideo();
+                    const seekAfterDelay = (target) => {
+                        // ATUR DI SINI: Unmute instan dilakukan SEBELUM delay berjalan
+                        try {
+                            target.muted = false; 
+                            target.volume = 1.0;
+                            target.play().catch(() => {}); 
+                        } catch (e) {
+                            document.documentElement.dataset.travianVideoAudioError = 'audio-unmute-failed';
+                        }
+
+                        // Tunggu 4 detik (atau sesuaikan kebutuhan) untuk melompat ke detik 29
+                        setTimeout(() => {
+                            try {
+                                target.currentTime = 29;
+                                target.play().catch(() => {});
+                                document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-29';
+                            } catch (e) {
+                                document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
+                            }
+                        }, 4000);
+                    };
+
+                    if (video) {
+                        seekAfterDelay(video);
+                        return "found[" + video.currentTime.toFixed(1) + "s / " + (video.duration ? video.duration.toFixed(1) : "unknown") + "s]";
+                    }
+
+                    // Loop Cadangan mencari video jika belum siap (Perbaikan kode yang terpotong)
+                    const startedAt = Date.now();
+                    const timer = setInterval(() => {
+                        const found = findVideo();
+                        if (found) {
+                            clearInterval(timer);
+                            seekAfterDelay(found);
+                        } else if (Date.now() - startedAt >= 15000) {
+                            clearInterval(timer);
+                            document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
+                        }
+                    }, 100);
+                    
+                    return 'searching-video';
+                })();
+                """.trimIndent()
+            ) { rawCount ->
+                val videoStats = rawCount.orEmpty().trim('"')
+                logEvent("$builderName: $villageName setelah 10 detik — seek ke 29 (video=$videoStats), menunggu auto-redirect game...")
+
+                // 3. MONITORING REDIRECT: Cek perubahan URL secara berkala daripada memakai delay statis
+                val checkRedirectHandler = android.os.Handler(android.os.Looper.getMainLooper())
+                var attempts = 0
+                
+                val checkUrlRunnable = object : Runnable {
+                    override fun run() {
+                        if (!running || !builderInProgress) return
+                        
+                        val currentUrl = view.url.orEmpty()
+                        attempts++
+
+                        // Jika game Travian sudah otomatis berpindah ke dorf1 atau dorf2, klaim iklan SAH dan BERHASIL!
+                        if (currentUrl.contains("dorf1.php") || currentUrl.contains("dorf2.php")) {
+                            logEvent("$builderName: $villageName Terdeteksi Auto-Redirect Berhasil (${currentUrl.substringAfter("com/")}) — Lanjut Desa!")
+                            
+                            // Reset variabel state builder lama Anda
+                            upgradeClickSourceUrl = ""
+                            pendingUpgradeUrl = ""
+                            pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+                            heroTransferCompleted = false
+
+                            if (townBuilderInProgress) {
+                                advanceTownBuilderVillage()
+                            } else {
+                                goToNextBuilderVillage()
+                            }
+                        } else if (attempts >= 15) { 
+                            // Batas Aman (Timeout): Jika dalam 15 detik game tidak melakukan redirect, paksa pindah
+                            logEvent("$builderName: $villageName Timeout menunggu auto-redirect iklan. Paksa lanjut desa.")
+                            
+                            upgradeClickSourceUrl = ""
+                            pendingUpgradeUrl = ""
+                            pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+                            heroTransferCompleted = false
+                            
+                            if (townBuilderInProgress) {
+                                advanceTownBuilderVillage()
+                            } else {
+                                goToNextBuilderVillage()
+                            }
+                        } else {
+                            // Cek kembali status URL 1 detik kemudian
+                            checkRedirectHandler.postDelayed(this, 1000L)
+                        }
+                    }
+                }
+                // Memulai loop pengecekan URL aktif
+                checkRedirectHandler.postDelayed(checkUrlRunnable, 1000L)
+            }
+        }, 10000L)
     }
+}
+
+
 
     private fun clickTownUpgrade() {
         if (!running || !townBuilderInProgress) return
