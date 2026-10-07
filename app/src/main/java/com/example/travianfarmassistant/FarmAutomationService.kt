@@ -3063,7 +3063,7 @@ private fun clickTransferSelected() {
         updateNotification("Refresh Village setelah CICLE END | Next Run ${timeFormat.format(Date(nextAt))}")
     }
 
-        private fun clickFasterUpgrade() {
+    private fun clickFasterUpgrade() {
         if (!running || !builderInProgress) return
 
         val view = automationWebView() ?: return
@@ -3072,6 +3072,10 @@ private fun clickTransferSelected() {
 
         builderStage = "WAIT_VIDEO_SKIP"
         upgradeClickSourceUrl = sourceUrl
+
+        val builderName = if (townBuilderInProgress) "Town Builder" else "Resource Builder"
+        val villageName = builderVillages.getOrNull(builderVillageIndex)?.second
+            ?: "Village ${builderVillageIndex + 1}"
 
         val js = """
             (() => {
@@ -3096,27 +3100,28 @@ private fun clickTransferSelected() {
 
                 if (!btn) return 'not-found';
 
-                document.documentElement.dataset.travianFasterState = 'waiting-video';
-                document.documentElement.dataset.travianFasterInfo = '';
-
                 btn.scrollIntoView({block:'center', inline:'center'});
                 btn.click();
 
-                const startedAt = Date.now();
+                document.documentElement.dataset.travianFasterState = 'clicked';
+                document.documentElement.dataset.travianFasterTime = '';
+                document.documentElement.dataset.travianFasterPlay = '';
 
                 const findVideo = () => {
-                    const videos = [...document.querySelectorAll('video')];
-                    return videos.find(v => {
+                    const list = [...document.querySelectorAll('video')];
+                    return list.find(v => {
                         const r = v.getBoundingClientRect();
                         return r.width > 0 && r.height > 0;
-                    }) || videos[0] || null;
+                    }) || list[0] || null;
                 };
+
+                const start = Date.now();
 
                 const waitVideo = setInterval(() => {
                     const video = findVideo();
 
                     if (!video) {
-                        if (Date.now() - startedAt >= 15000) {
+                        if (Date.now() - start > 15000) {
                             clearInterval(waitVideo);
                             document.documentElement.dataset.travianFasterState = 'video-not-found';
                         }
@@ -3125,17 +3130,31 @@ private fun clickTransferSelected() {
 
                     clearInterval(waitVideo);
 
-                    document.documentElement.dataset.travianFasterState = 'waiting-10s';
-
                     try {
                         video.autoplay = true;
                         video.playsInline = true;
-                        video.muted = false;
-                        video.volume = 1.0;
-                        video.play().catch(() => {});
-                    } catch (_) {}
 
-                    // Setelah video ditemukan: tunggu tepat 10 detik.
+                        // WebView lebih konsisten mengizinkan autoplay bila muted.
+                        video.muted = true;
+                        video.volume = 0;
+
+                        const p = video.play();
+                        if (p && p.then) {
+                            p.then(() => {
+                                document.documentElement.dataset.travianFasterPlay = 'started';
+                            }).catch(e => {
+                                document.documentElement.dataset.travianFasterPlay =
+                                    'error-' + String(e && e.name || 'unknown');
+                            });
+                        }
+                    } catch (e) {
+                        document.documentElement.dataset.travianFasterPlay =
+                            'error-' + String(e && e.name || 'unknown');
+                    }
+
+                    document.documentElement.dataset.travianFasterState = 'waiting-10s';
+
+                    // Tepat 10 detik setelah video ditemukan.
                     setTimeout(() => {
                         if (!video.isConnected) {
                             document.documentElement.dataset.travianFasterState = 'video-not-found';
@@ -3144,22 +3163,53 @@ private fun clickTransferSelected() {
 
                         try {
                             video.currentTime = 29;
-                            document.documentElement.dataset.travianFasterState = 'seeked-29';
+                            document.documentElement.dataset.travianFasterState = 'seeking-29';
 
                             try {
                                 video.play().catch(() => {});
                             } catch (_) {}
 
-                            // Setelah seek 29: tunggu 7 detik, lalu selesai.
-                            setTimeout(() => {
-                                document.documentElement.dataset.travianFasterState = 'done';
-                            }, 7000);
+                            // Verifikasi currentTime benar-benar pindah ke sekitar detik 29.
+                            const verifyStart = Date.now();
 
-                        } catch (_) {
+                            const verifySeek = setInterval(() => {
+                                if (!video.isConnected) {
+                                    clearInterval(verifySeek);
+                                    document.documentElement.dataset.travianFasterState = 'video-not-found';
+                                    return;
+                                }
+
+                                const ct = Number(video.currentTime || 0);
+                                document.documentElement.dataset.travianFasterTime = String(ct);
+
+                                if (ct >= 28.5) {
+                                    clearInterval(verifySeek);
+                                    document.documentElement.dataset.travianFasterState = 'seeked-29';
+
+                                    // Setelah posisi 29 benar-benar tercapai,
+                                    // tunggu 7 detik sebelum dianggap selesai.
+                                    setTimeout(() => {
+                                        if (!video.isConnected) {
+                                            document.documentElement.dataset.travianFasterState = 'video-not-found';
+                                            return;
+                                        }
+
+                                        document.documentElement.dataset.travianFasterTime =
+                                            String(Number(video.currentTime || 0));
+                                        document.documentElement.dataset.travianFasterState = 'done';
+                                    }, 7000);
+
+                                } else if (Date.now() - verifyStart > 5000) {
+                                    clearInterval(verifySeek);
+                                    document.documentElement.dataset.travianFasterState = 'seek-error';
+                                }
+                            }, 100);
+
+                        } catch (e) {
                             document.documentElement.dataset.travianFasterState = 'seek-error';
                         }
                     }, 10000);
-                }, 200);
+                }, 100);
 
                 return 'clicked';
             })();
@@ -3167,11 +3217,10 @@ private fun clickTransferSelected() {
 
         view.evaluateJavascript(js) { raw ->
             val result = raw.orEmpty().trim('"')
-            val name = builderVillages.getOrNull(builderVillageIndex)?.second
-                ?: "Village ${builderVillageIndex + 1}"
 
             if (result != "clicked") {
-                logEvent("${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: tombol Faster tidak ditemukan — lanjut village")
+                logEvent("$builderName: $villageName tombol Faster tidak ditemukan — lanjut village")
+
                 if (townBuilderInProgress) {
                     advanceTownBuilderVillage()
                 } else {
@@ -3180,25 +3229,40 @@ private fun clickTransferSelected() {
                 return@evaluateJavascript
             }
 
-            logEvent("${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: $name klik Faster — tunggu 10 detik, seek 29, tunggu 7 detik")
+            logEvent("$builderName: $villageName klik Faster — tunggu 10 detik, seek 29, verifikasi, tunggu 7 detik")
 
-            val checkFaster: Runnable = object : Runnable {
+            val checkFaster = object : Runnable {
                 override fun run() {
                     if (!running || !builderInProgress) return
 
                     view.evaluateJavascript(
-                        "document.documentElement.dataset.travianFasterState || ''"
-                    ) { stateRaw ->
-                        val state = stateRaw.orEmpty().trim('"')
+                        "JSON.stringify({" +
+                            "state:document.documentElement.dataset.travianFasterState||''," +
+                            "time:document.documentElement.dataset.travianFasterTime||''," +
+                            "play:document.documentElement.dataset.travianFasterPlay||''" +
+                        "})"
+                    ) { rawState ->
+                        val json = rawState.orEmpty()
+                            .trim('"')
+                            .replace("\\\"", "\"")
+
+                        val state = Regex("\"state\":\"([^\"]*)\"")
+                            .find(json)?.groupValues?.getOrNull(1).orEmpty()
+
+                        val time = Regex("\"time\":\"([^\"]*)\"")
+                            .find(json)?.groupValues?.getOrNull(1).orEmpty()
+
+                        val play = Regex("\"play\":\"([^\"]*)\"")
+                            .find(json)?.groupValues?.getOrNull(1).orEmpty()
 
                         when (state) {
                             "done" -> {
+                                logEvent("$builderName: $villageName Faster OK — currentTime=$time play=$play — lanjut village")
+
                                 upgradeClickSourceUrl = ""
                                 pendingUpgradeUrl = ""
                                 pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
                                 heroTransferCompleted = false
-
-                                logEvent("${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: $name Faster selesai — lanjut village")
 
                                 if (townBuilderInProgress) {
                                     advanceTownBuilderVillage()
@@ -3208,12 +3272,12 @@ private fun clickTransferSelected() {
                             }
 
                             "video-not-found", "seek-error" -> {
+                                logEvent("$builderName: $villageName Faster GAGAL — state=$state currentTime=$time play=$play — lanjut village")
+
                                 upgradeClickSourceUrl = ""
                                 pendingUpgradeUrl = ""
                                 pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
                                 heroTransferCompleted = false
-
-                                logEvent("${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: $name Faster gagal ($state) — lanjut village")
 
                                 if (townBuilderInProgress) {
                                     advanceTownBuilderVillage()
@@ -3222,7 +3286,9 @@ private fun clickTransferSelected() {
                                 }
                             }
 
-                            else -> handler.postDelayed(this, 500L)
+                            else -> {
+                                handler.postDelayed(this, 500L)
+                            }
                         }
                     }
                 }
@@ -3377,7 +3443,7 @@ private fun clickTransferSelected() {
         }
     }
 
-        private fun clickResourceUpgrade() {
+    private fun clickResourceUpgrade() {
         if (townBuilderInProgress) {
             clickTownUpgrade()
             return
