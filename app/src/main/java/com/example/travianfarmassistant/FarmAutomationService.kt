@@ -3085,7 +3085,7 @@ private fun clickTransferSelected() {
         val js = """
             (() => {
                 const btn = [...document.querySelectorAll(
-                    'button.textButtonV1.purple.build.videoFeatureButton'
+                    '.videoFeatureButton'
                 )].find(el => {
                     const r = el.getBoundingClientRect();
                     const st = getComputedStyle(el);
