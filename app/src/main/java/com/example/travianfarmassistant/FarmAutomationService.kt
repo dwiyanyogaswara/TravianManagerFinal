@@ -3063,256 +3063,180 @@ private fun clickTransferSelected() {
         updateNotification("Refresh Village setelah CICLE END | Next Run ${timeFormat.format(Date(nextAt))}")
     }
 
-    private fun clickTownUpgrade() {
-        if (!running || !townBuilderInProgress) return
+        private fun clickFasterUpgrade() {
+        if (!running || !builderInProgress) return
+
         val view = automationWebView() ?: return
         val sourceUrl = view.url.orEmpty()
         if (sourceUrl.isBlank()) return
+
         builderStage = "WAIT_VIDEO_SKIP"
         upgradeClickSourceUrl = sourceUrl
+
         val js = """
             (() => {
                 const visible = el => {
                     if (!el) return false;
-                    const s = getComputedStyle(el), r = el.getBoundingClientRect();
-                    return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
+                    const s = getComputedStyle(el);
+                    const r = el.getBoundingClientRect();
+                    return s.display !== 'none' &&
+                           s.visibility !== 'hidden' &&
+                           s.opacity !== '0' &&
+                           r.width > 0 &&
+                           r.height > 0;
                 };
-                const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
-                    .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+
+                const btn = [...document.querySelectorAll(
+                    'button.textButtonV1.purple.build.videoFeatureButton'
+                )].find(el =>
+                    visible(el) &&
+                    !el.disabled &&
+                    el.getAttribute('aria-disabled') !== 'true'
+                );
+
                 if (!btn) return 'not-found';
+
+                document.documentElement.dataset.travianFasterState = 'waiting-video';
+                document.documentElement.dataset.travianFasterInfo = '';
+
                 btn.scrollIntoView({block:'center', inline:'center'});
                 btn.click();
-                return 'clicked-video-upgrade';
-            })();
-        """.trimIndent()
-        view.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"')
-            val name = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
-            if (result == "clicked-video-upgrade") {
-                logEvent("Town Builder: $name klik Upgrade 25% faster — video muncul, tunggu 4 detik")
-                val videoView = automationWebView() ?: return@evaluateJavascript
 
-                /*
-                 * Jangan menganggap seek berhasil hanya karena currentTime bisa
-                 * di-set. Video harus:
-                 * 1. ditemukan,
-                 * 2. play() berhasil,
-                 * 3. benar-benar bergerak setelah seek,
-                 * 4. mencapai ended sebelum village berikutnya diproses.
-                 */
-                val videoJs = """
-                    (() => {
-                        document.documentElement.dataset.travianVideoSkipResult = '';
-                        document.documentElement.dataset.travianVideoInfo = '';
-                        document.documentElement.dataset.travianVideoLastProgress = '';
-                        document.documentElement.dataset.travianVideoSource = '';
+                const startedAt = Date.now();
 
-                        const findVideo = () => {
-                            const videos = [...document.querySelectorAll('video')];
-                            return videos.find(v => {
-                                const r = v.getBoundingClientRect();
-                                return r.width > 0 && r.height > 0;
-                            }) || videos[0] || null;
-                        };
+                const findVideo = () => {
+                    const videos = [...document.querySelectorAll('video')];
+                    return videos.find(v => {
+                        const r = v.getBoundingClientRect();
+                        return r.width > 0 && r.height > 0;
+                    }) || videos[0] || null;
+                };
 
-                        const describeVideo = (v) => {
-                            if (!v) return 'none';
-                            return JSON.stringify({
-                                src: v.currentSrc || v.src || '',
-                                readyState: v.readyState,
-                                duration: Number.isFinite(v.duration) ? v.duration : 0,
-                                currentTime: Number.isFinite(v.currentTime) ? v.currentTime : 0,
-                                paused: v.paused,
-                                ended: v.ended
-                            });
-                        };
+                const waitVideo = setInterval(() => {
+                    const video = findVideo();
 
-                        const startVideo = (video) => {
-                            if (!video) {
-                                document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
-                                return;
-                            }
-
-                            const describeVideo = (v) => JSON.stringify({
-                                src:v.currentSrc||v.src||'',
-                                readyState:v.readyState,
-                                duration:Number.isFinite(v.duration)?v.duration:0,
-                                currentTime:Number.isFinite(v.currentTime)?v.currentTime:0,
-                                paused:v.paused,
-                                ended:v.ended
-                            });
-
-                            document.documentElement.dataset.travianVideoSource = video.getAttribute('src') || video.currentSrc || video.src || '';
-                            document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-                            document.documentElement.dataset.travianVideoSkipResult = 'video-found-waiting-5s';
-
-                            // PENTING: mulai playback SEGERA saat video baru terdeteksi.
-                            // Kalau play() baru dipanggil setelah timer 5 detik, user activation
-                            // dari klik "25% faster" sudah hilang dan WebView dapat menolak playback.
-                            try {
-                                video.autoplay = true;
-                                video.muted = false;
-                                video.volume = 1.0;
-                                video.playsInline = true;
-                                const playPromise = video.play();
-                                if (playPromise && typeof playPromise.then === 'function') {
-                                    playPromise.then(() => {
-                                        document.documentElement.dataset.travianVideoPlayResult = 'play-started';
-                                    }).catch((e) => {
-                                        document.documentElement.dataset.travianVideoPlayResult = 'play-error-' + String(e && e.name || 'unknown');
-                                    });
-                                } else {
-                                    document.documentElement.dataset.travianVideoPlayResult = 'play-requested';
-                                }
-                            } catch (e) {
-                                document.documentElement.dataset.travianVideoPlayResult = 'play-error-' + String(e && e.name || 'unknown');
-                            }
-
-                            // Fase 1: video diputar dulu selama 5 detik.
-                            // Fase 2: BARU seek ke detik 29, play lagi, lalu WAJIB tunggu 5 detik.
-                            setTimeout(() => {
-                                if (!video.isConnected) {
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
-                                    return;
-                                }
-
-                                try {
-                                    video.currentTime = 29;
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-29';
-                                    document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-
-                                    // Setelah seek ke detik 29, pastikan playback benar-benar berjalan.
-                                    try {
-                                        const resumePromise = video.play();
-                                        if (resumePromise && typeof resumePromise.catch === 'function') {
-                                            resumePromise.then(() => {
-                                                document.documentElement.dataset.travianVideoPlayResult = 'play-after-seek-started';
-                                            }).catch((e) => {
-                                                document.documentElement.dataset.travianVideoPlayResult = 'resume-error-' + String(e && e.name || 'unknown');
-                                            });
-                                        } else {
-                                            document.documentElement.dataset.travianVideoPlayResult = 'play-after-seek-requested';
-                                        }
-                                    } catch (e) {
-                                        document.documentElement.dataset.travianVideoPlayResult = 'resume-error-' + String(e && e.name || 'unknown');
-                                    }
-
-                                    // WAJIB tunggu 5 detik setelah seek ke detik 29.
-                                    // Selama 5 detik ini, jika WebView menghentikan playback,
-                                    // coba play lagi agar video tidak berhenti sebelum timer selesai.
-                                    const keepPlayingUntil = Date.now() + 5000;
-                                    const keepPlaying = setInterval(() => {
-                                        if (!video.isConnected || Date.now() >= keepPlayingUntil) {
-                                            clearInterval(keepPlaying);
-                                            return;
-                                        }
-                                        try {
-                                            if (video.paused || video.ended) {
-                                                if (video.ended) video.currentTime = 29;
-                                                video.play().catch(() => {});
-                                            }
-                                        } catch (_) {}
-                                    }, 250);
-
-                                    setTimeout(() => {
-                                        clearInterval(keepPlaying);
-                                        document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-                                        document.documentElement.dataset.travianVideoSkipResult = 'video-ended';
-                                    }, 10000);
-                                } catch (e) {
-                                    document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
-                                }
-                            }, 10000);
-                        };
-
-                        const video = findVideo();
-                        if (video) {
-                            startVideo(video);
-                            return 'video-found | src=' + (video.currentSrc || video.src || '') + ' | ' + describeVideo(video);
+                    if (!video) {
+                        if (Date.now() - startedAt >= 15000) {
+                            clearInterval(waitVideo);
+                            document.documentElement.dataset.travianFasterState = 'video-not-found';
                         }
-
-                        const startedAt = Date.now();
-                        const timer = setInterval(() => {
-                            const found = findVideo();
-                            if (found) {
-                                clearInterval(timer);
-                                startVideo(found);
-                            } else if (Date.now() - startedAt >= 15000) {
-                                clearInterval(timer);
-                                document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
-                            }
-                        }, 100);
-
-                        return 'waiting-video';
-                    })();
-                """.trimIndent()
-
-                logEvent("Town Builder: $name cek DOM video dimulai setelah klik Faster")
-                videoView.evaluateJavascript(videoJs) { rawResult ->
-                    val diag = rawResult.orEmpty().trim('"').replace("\\\"", "\"")
-                    logEvent("Town Builder: $name DOM video check = $diag")
-                    logEvent("Town Builder: $name DOM VIDEO SOURCE = " + runCatching { Regex("src=([^| ]+)").find(diag)?.groupValues?.getOrNull(1).orEmpty() }.getOrDefault("").ifBlank { "DOM VIDEO SOURCE TIDAK DITEMUKAN" })
-
-                    lateinit var checkVideo: Runnable
-                    checkVideo = object : Runnable {
-                        override fun run() {
-                            if (!running || !townBuilderInProgress) return
-
-                            videoView.evaluateJavascript(
-                                "JSON.stringify({state:document.documentElement.dataset.travianVideoSkipResult||'',play:document.documentElement.dataset.travianVideoPlayResult||'',source:document.documentElement.dataset.travianVideoSource||'',info:document.documentElement.dataset.travianVideoInfo||'',progress:document.documentElement.dataset.travianVideoLastProgress||''})"
-                            ) { stateRaw ->
-                                val stateJson = stateRaw.orEmpty().trim('"').replace("\\\"", "\"")
-                                val state = Regex("\"state\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
-                                val play = Regex("\"play\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
-                                val domSource = Regex("\"source\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
-                                val info = Regex("\"info\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
-                                val videoSrc = domSource.ifBlank {
-                                    runCatching { Regex("\"src\":\"([^\"]*)").find(info)?.groupValues?.getOrNull(1).orEmpty() }.getOrDefault("")
-                                }
-                                val progress = Regex("\"progress\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
-
-                                when {
-                                    state == "video-ended" -> {
-                                        logEvent("Town Builder: $name VIDEO WAIT SELESAI — source=$videoSrc play=$play info=$info")
-                                        logEvent("Town Builder: $name video selesai diproses — lanjut village berikutnya")
-                                        upgradeClickSourceUrl = ""
-                                        pendingUpgradeUrl = ""
-                                        pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
-                                        heroTransferCompleted = false
-                                        builderStage = "TOWN_ADVANCING"
-                                        logEvent("Town Builder: $name upgrade faster success")
-                                        advanceTownBuilderVillage()
-                                    }
-
-                                    state == "video-not-found" ||
-                                    state == "video-seek-error" -> {
-                                        logEvent("Town Builder: $name VIDEO GAGAL — state=$state source=$videoSrc play=$play info=$info")
-                                        logEvent("Town Builder: $name video tidak selesai — lanjut village berikutnya")
-                                        upgradeClickSourceUrl = ""
-                                        pendingUpgradeUrl = ""
-                                        pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
-                                        heroTransferCompleted = false
-                                        builderStage = "TOWN_ADVANCING"
-                                        advanceTownBuilderVillage()
-                                    }
-
-                                    else -> handler.postDelayed(checkVideo, 500L)
-                                }
-                            }
-                        }
+                        return;
                     }
 
-                    handler.postDelayed(checkVideo, 500L)
+                    clearInterval(waitVideo);
+
+                    document.documentElement.dataset.travianFasterState = 'waiting-10s';
+
+                    try {
+                        video.autoplay = true;
+                        video.playsInline = true;
+                        video.muted = false;
+                        video.volume = 1.0;
+                        video.play().catch(() => {});
+                    } catch (_) {}
+
+                    // Setelah video ditemukan: tunggu tepat 10 detik.
+                    setTimeout(() => {
+                        if (!video.isConnected) {
+                            document.documentElement.dataset.travianFasterState = 'video-not-found';
+                            return;
+                        }
+
+                        try {
+                            video.currentTime = 29;
+                            document.documentElement.dataset.travianFasterState = 'seeked-29';
+
+                            try {
+                                video.play().catch(() => {});
+                            } catch (_) {}
+
+                            // Setelah seek 29: tunggu 7 detik, lalu selesai.
+                            setTimeout(() => {
+                                document.documentElement.dataset.travianFasterState = 'done';
+                            }, 7000);
+
+                        } catch (_) {
+                            document.documentElement.dataset.travianFasterState = 'seek-error';
+                        }
+                    }, 10000);
+                }, 200);
+
+                return 'clicked';
+            })();
+        """.trimIndent()
+
+        view.evaluateJavascript(js) { raw ->
+            val result = raw.orEmpty().trim('"')
+            val name = builderVillages.getOrNull(builderVillageIndex)?.second
+                ?: "Village ${builderVillageIndex + 1}"
+
+            if (result != "clicked") {
+                logEvent("${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: tombol Faster tidak ditemukan — lanjut village")
+                if (townBuilderInProgress) {
+                    advanceTownBuilderVillage()
+                } else {
+                    goToNextBuilderVillage()
                 }
-            } else {
-                builderStage = "INSPECT_UPGRADE"
-                upgradeClickSourceUrl = ""
-                logEvent("Town Builder: tombol Upgrade 25% faster tidak ditemukan ($result) — village dilewati")
-                advanceTownBuilderVillage()
+                return@evaluateJavascript
             }
+
+            logEvent("${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: $name klik Faster — tunggu 10 detik, seek 29, tunggu 7 detik")
+
+            val checkFaster: Runnable = object : Runnable {
+                override fun run() {
+                    if (!running || !builderInProgress) return
+
+                    view.evaluateJavascript(
+                        "document.documentElement.dataset.travianFasterState || ''"
+                    ) { stateRaw ->
+                        val state = stateRaw.orEmpty().trim('"')
+
+                        when (state) {
+                            "done" -> {
+                                upgradeClickSourceUrl = ""
+                                pendingUpgradeUrl = ""
+                                pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+                                heroTransferCompleted = false
+
+                                logEvent("${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: $name Faster selesai — lanjut village")
+
+                                if (townBuilderInProgress) {
+                                    advanceTownBuilderVillage()
+                                } else {
+                                    goToNextBuilderVillage()
+                                }
+                            }
+
+                            "video-not-found", "seek-error" -> {
+                                upgradeClickSourceUrl = ""
+                                pendingUpgradeUrl = ""
+                                pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+                                heroTransferCompleted = false
+
+                                logEvent("${if (townBuilderInProgress) "Town Builder" else "Resource Builder"}: $name Faster gagal ($state) — lanjut village")
+
+                                if (townBuilderInProgress) {
+                                    advanceTownBuilderVillage()
+                                } else {
+                                    goToNextBuilderVillage()
+                                }
+                            }
+
+                            else -> handler.postDelayed(this, 500L)
+                        }
+                    }
+                }
+            }
+
+            handler.postDelayed(checkFaster, 500L)
         }
     }
+
+    private fun clickTownUpgrade() {
+        if (!running || !townBuilderInProgress) return
+        clickFasterUpgrade()
+    }
+
 
     private fun useHeroInventoryForPendingUpgrade(): Unit {
         debugTrace("ENTER useHeroInventoryForPendingUpgrade")
@@ -3453,7 +3377,7 @@ private fun clickTransferSelected() {
         }
     }
 
-    private fun clickResourceUpgrade() {
+        private fun clickResourceUpgrade() {
         if (townBuilderInProgress) {
             clickTownUpgrade()
             return
@@ -3471,235 +3395,9 @@ private fun clickTransferSelected() {
             return
         }
 
-        builderStage = "WAIT_VIDEO_SKIP"
-        upgradeClickSourceUrl = currentUrl
-        val js = """
-            (() => {
-                const visible = el => {
-                    if (!el) return false;
-                    const s = getComputedStyle(el), r = el.getBoundingClientRect();
-                    return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && r.width > 0 && r.height > 0;
-                };
-                const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
-                    .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
-                if (!btn) return 'not-found';
-                btn.scrollIntoView({block:'center', inline:'center'});
-                btn.click();
-                return 'clicked-video-upgrade';
-            })();
-        """.trimIndent()
-        automationWebView()?.evaluateJavascript(js) { raw ->
-            val result = raw.orEmpty().trim('"')
-            val name = builderVillages.getOrNull(builderVillageIndex)?.second ?: "Village ${builderVillageIndex + 1}"
-            if (result == "clicked-video-upgrade") {
-                logEvent("Resource Builder: $name klik Upgrade 25% faster — video muncul, tunggu 4 detik")
-                val videoView = automationWebView() ?: return@evaluateJavascript
-                val seekJs = """
-                    (() => {
-                        const findVideo = () => {
-                            const videos = [...document.querySelectorAll('video')];
-                            return videos.find(v => {
-                                const r = v.getBoundingClientRect();
-                                return r.width > 0 && r.height > 0;
-                            }) || videos[0] || null;
-                        };
-
-                        const describeVideo = (v) => {
-                            if (!v) return 'none';
-                            const r = v.getBoundingClientRect();
-                            return JSON.stringify({
-                                src:v.currentSrc||v.src||'',
-                                readyState:v.readyState,
-                                duration:Number.isFinite(v.duration)?v.duration:0,
-                                currentTime:Number.isFinite(v.currentTime)?v.currentTime:0,
-                                paused:v.paused,
-                                ended:v.ended,
-                                display:getComputedStyle(v).display,
-                                width:Math.round(r.width),
-                                height:Math.round(r.height)
-                            });
-                        };
-
-                        const startVideo = (video) => {
-                            if (!video) {
-                                document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
-                                return;
-                            }
-
-                            const describeVideo = (v) => JSON.stringify({
-                                src:v.currentSrc||v.src||'',
-                                readyState:v.readyState,
-                                duration:Number.isFinite(v.duration)?v.duration:0,
-                                currentTime:Number.isFinite(v.currentTime)?v.currentTime:0,
-                                paused:v.paused,
-                                ended:v.ended
-                            });
-
-                            document.documentElement.dataset.travianVideoSource = video.getAttribute('src') || video.currentSrc || video.src || '';
-                            document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-                            document.documentElement.dataset.travianVideoSkipResult = 'video-found-waiting-5s';
-
-                            // PENTING: mulai playback SEGERA saat video baru terdeteksi.
-                            // Kalau play() baru dipanggil setelah timer 5 detik, user activation
-                            // dari klik "25% faster" sudah hilang dan WebView dapat menolak playback.
-                            try {
-                                video.autoplay = true;
-                                video.muted = false;
-                                video.volume = 1.0;
-                                video.playsInline = true;
-                                const playPromise = video.play();
-                                if (playPromise && typeof playPromise.then === 'function') {
-                                    playPromise.then(() => {
-                                        document.documentElement.dataset.travianVideoPlayResult = 'play-started';
-                                    }).catch((e) => {
-                                        document.documentElement.dataset.travianVideoPlayResult = 'play-error-' + String(e && e.name || 'unknown');
-                                    });
-                                } else {
-                                    document.documentElement.dataset.travianVideoPlayResult = 'play-requested';
-                                }
-                            } catch (e) {
-                                document.documentElement.dataset.travianVideoPlayResult = 'play-error-' + String(e && e.name || 'unknown');
-                            }
-
-                            // Fase 1: video diputar dulu selama 5 detik.
-                            // Fase 2: BARU seek ke detik 29, play lagi, lalu WAJIB tunggu 5 detik.
-                            setTimeout(() => {
-                                if (!video.isConnected) {
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
-                                    return;
-                                }
-
-                                try {
-                                    video.currentTime = 29;
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-29';
-                                    document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-
-                                    // Setelah seek ke detik 29, pastikan playback benar-benar berjalan.
-                                    try {
-                                        const resumePromise = video.play();
-                                        if (resumePromise && typeof resumePromise.catch === 'function') {
-                                            resumePromise.then(() => {
-                                                document.documentElement.dataset.travianVideoPlayResult = 'play-after-seek-started';
-                                            }).catch((e) => {
-                                                document.documentElement.dataset.travianVideoPlayResult = 'resume-error-' + String(e && e.name || 'unknown');
-                                            });
-                                        } else {
-                                            document.documentElement.dataset.travianVideoPlayResult = 'play-after-seek-requested';
-                                        }
-                                    } catch (e) {
-                                        document.documentElement.dataset.travianVideoPlayResult = 'resume-error-' + String(e && e.name || 'unknown');
-                                    }
-
-                                    // WAJIB tunggu 5 detik setelah seek ke detik 29.
-                                    // Selama 5 detik ini, jika WebView menghentikan playback,
-                                    // coba play lagi agar video tidak berhenti sebelum timer selesai.
-                                    const keepPlayingUntil = Date.now() + 5000;
-                                    const keepPlaying = setInterval(() => {
-                                        if (!video.isConnected || Date.now() >= keepPlayingUntil) {
-                                            clearInterval(keepPlaying);
-                                            return;
-                                        }
-                                        try {
-                                            if (video.paused || video.ended) {
-                                                if (video.ended) video.currentTime = 29;
-                                                video.play().catch(() => {});
-                                            }
-                                        } catch (_) {}
-                                    }, 250);
-
-                                    setTimeout(() => {
-                                        clearInterval(keepPlaying);
-                                        document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-                                        document.documentElement.dataset.travianVideoSkipResult = 'video-ended';
-                                    }, 10000);
-                                } catch (e) {
-                                    document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
-                                }
-                            }, 10000);
-                        };
-
-                        const video = findVideo();
-                        if (video) {
-                            startVideo(video);
-                            return 'video-found | src=' + (video.currentSrc || video.src || '') + ' | ' + describeVideo(video);
-                        }
-
-                        const startedAt = Date.now();
-                        const timer = setInterval(() => {
-                            const found = findVideo();
-                            if (found) {
-                                clearInterval(timer);
-                                startVideo(found);
-                            } else if (Date.now() - startedAt >= 15000) {
-                                clearInterval(timer);
-                                document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
-                            }
-                        }, 100);
-
-                        return 'waiting-video';
-                    })();
-                """.trimIndent()
-                logEvent("Resource Builder: $name cek DOM video dimulai setelah klik Faster")
-                videoView.evaluateJavascript(seekJs) { rawResult ->
-                    val diag = rawResult.orEmpty().trim('"').replace("\\\"", "\"")
-                    logEvent("Resource Builder: $name DOM video check = $diag")
-                    logEvent("Resource Builder: $name DOM VIDEO SOURCE = " + runCatching { Regex("src=([^| ]+)").find(diag)?.groupValues?.getOrNull(1).orEmpty() }.getOrDefault("").ifBlank { "DOM VIDEO SOURCE TIDAK DITEMUKAN" })
-                    val checkSeeked: Runnable = object : Runnable {
-                        override fun run() {
-                            if (!running || !builderInProgress || townBuilderInProgress) return
-                            videoView.evaluateJavascript("JSON.stringify({state:document.documentElement.dataset.travianVideoSkipResult||'',play:document.documentElement.dataset.travianVideoPlayResult||'',source:document.documentElement.dataset.travianVideoSource||'',info:document.documentElement.dataset.travianVideoInfo||''})") { stateRaw ->
-                                val stateJson = stateRaw.orEmpty().trim('"').replace("\\\"", "\"")
-                                val state = Regex("\"state\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
-                                val play = Regex("\"play\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
-                                val domSource = Regex("\"source\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
-                                val info = Regex("\"info\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
-                                val videoSrc = domSource.ifBlank {
-                                    runCatching { Regex("\"src\":\"([^\"]*)").find(info)?.groupValues?.getOrNull(1).orEmpty() }.getOrDefault("")
-                                }
-                                when {
-                                    state == "video-ended" -> {
-                                        logEvent("Resource Builder: $name VIDEO WAIT SELESAI — source=$videoSrc play=$play info=$info")
-                                        upgradeClickSourceUrl = ""
-                                        pendingUpgradeUrl = ""
-                                        pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
-                                        heroTransferCompleted = false
-                                        logEvent("Resource Builder: $name upgrade faster success")
-                                        goToNextBuilderVillage()
-                                    }
-
-                                    state == "video-not-found" ||
-                                    state == "video-seek-error" -> {
-                                        logEvent("Resource Builder: $name VIDEO GAGAL — state=$state source=$videoSrc play=$play info=$info")
-                                        logEvent("Resource Builder: $name video tidak selesai — lanjut village berikutnya")
-                                        upgradeClickSourceUrl = ""
-                                        pendingUpgradeUrl = ""
-                                        pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
-                                        heroTransferCompleted = false
-                                        builderStage = "ADVANCING"
-                                        goToNextBuilderVillage()
-                                    }
-
-                                    else -> handler.postDelayed(this, 500L)
-                                }
-                            }
-                        }
-                    }
-                    handler.postDelayed(checkSeeked, 500L)
-                }
-            } else {
-                builderStage = "INSPECT_UPGRADE"
-                upgradeClickSourceUrl = ""
-                if (builderAttempt < 5) {
-                    builderAttempt++
-                    handler.postDelayed({ inspectUpgradeResources() }, 900)
-                } else {
-                    logEvent("Village $name tombol Upgrade 25% faster tidak ditemukan — SKIP")
-                    goToNextBuilderVillage()
-                }
-            }
-        }
+        clickFasterUpgrade()
     }
+
 
     private fun goToNextBuilderVillage() {
         debugTrace("ENTER goToNextBuilderVillage")
