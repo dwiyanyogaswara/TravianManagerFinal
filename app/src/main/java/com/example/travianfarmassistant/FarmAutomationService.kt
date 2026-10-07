@@ -3067,7 +3067,8 @@ private fun clickTransferSelected() {
     }
 
     
-private fun clickFasterUpgrade() {
+
+    private fun clickFasterUpgrade() {
     if (!running || !builderInProgress) return
 
     val view = automationWebView() ?: return
@@ -3119,7 +3120,7 @@ private fun clickFasterUpgrade() {
         handler.postDelayed({
             if (!running || !builderInProgress) return@postDelayed
 
-            // Suntikkan skrip untuk UNMUTE dan memaksa video BERPUTAR sampai habis secara organik
+            // Mengaktifkan video, memaksa putar
             view.evaluateJavascript(
                 """
                 (() => {
@@ -3136,7 +3137,6 @@ private fun clickFasterUpgrade() {
                     const video = findVideo();
                     if (video) {
                         try {
-                            // Maksa putar lancar dari detik awal
                             video.muted = false;
                             video.volume = 1.0;
                             video.play().catch(() => {});
@@ -3150,51 +3150,78 @@ private fun clickFasterUpgrade() {
                 """.trimIndent()
             ) { rawCount ->
                 val videoStats = rawCount.orEmpty().trim('"')
-                logEvent("$builderName: $villageName Iklan Aktif ($videoStats) — Menunggu sistem game melakukan Auto-Redirect (Maks 40 detik)...")
+                logEvent("$builderName: $villageName Iklan Aktif ($videoStats) — Memulai pelacakan durasi & menunggu Auto-Redirect...")
 
-                // 3. PEMANTAU REDIRECT ALAMI (Ditingkatkan batas toleransinya hingga 40 detik)
-                val checkRedirectHandler = android.os.Handler(android.os.Looper.getMainLooper())
+                // ====================================================================
+                // TAMBAHAN: FITUR LOG TIMELINE VIDEO SETIAP 3 DETIK & MONITOR REDIRECT
+                // ====================================================================
+                val trackerHandler = android.os.Handler(android.os.Looper.getMainLooper())
                 var secondsPassed = 0
                 
-                val checkUrlRunnable = object : Runnable {
+                val trackRunnable = object : Runnable {
                     override fun run() {
-                        if (!running || !builderInProgress) return
+                        // Hentikan pelacakan jika bot atau proses builder dihentikan user
+                        if (!running || !builderInProgress || builderStage != "WAIT_VIDEO_SKIP") return
                         
                         val currentUrl = view.url.orEmpty()
                         secondsPassed++
 
-                        // Jika URL berpindah ke dorf1 atau dorf2, klaim iklan 100% SUKSES DAN SAH!
+                        // A. Cek apakah halaman sudah dialihkan ke dorf1 atau dorf2
                         if (currentUrl.contains("dorf1.php") || currentUrl.contains("dorf2.php")) {
-                            logEvent("$builderName: $villageName Terdeteksi Auto-Redirect Berhasil (${currentUrl.substringAfter("com/")}) — Pembangunan selesai, lanjut desa!")
+                            logEvent("$builderName: $villageName Terdeteksi Auto-Redirect Berhasil (${currentUrl.substringAfter("com/")}) — Lanjut Desa!")
                             
                             upgradeClickSourceUrl = ""
                             pendingUpgradeUrl = ""
                             pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
                             heroTransferCompleted = false
+                            builderStage = "NORMAL"
 
                             if (townBuilderInProgress) advanceTownBuilderVillage() else goToNextBuilderVillage()
-                        } else if (secondsPassed >= 40) { 
-                            // Batas Toleransi diperpanjang ke 40 detik (karena durasi video iklan asli adalah 30-33 detik)
-                            logEvent("$builderName: $villageName Gagal Redirect setelah 40 detik. Melompati paksa desa.")
+                            return // Hentikan loop interval
+                        }
+
+                        // B. Setiap kelipatan 3 detik, tembak JS untuk ambil currentTime video iklan saat ini
+                        if (secondsPassed % 3 == 0) {
+                            view.evaluateJavascript(
+                                """
+                                (() => {
+                                    const video = [...document.querySelectorAll('video')].find(v => v.src.includes('traviangames.com') || v.style.zIndex === '999999');
+                                    if (video) {
+                                        return video.currentTime.toFixed(1) + "s / " + (video.duration ? video.duration.toFixed(1) + "s" : "unknown");
+                                    }
+                                    return "video-missing";
+                                })();
+                                """.trimIndent()
+                            ) { timeRaw ->
+                                val timeStats = timeRaw.orEmpty().trim('"')
+                                logEvent("$builderName: $villageName Timeline Iklan -> Detik ke-$timeStats")
+                            }
+                        }
+
+                        // C. Batas Toleransi Pengaman (Timeout 50 Detik)
+                        if (secondsPassed >= 50) {
+                            logEvent("$builderName: $villageName Gagal Redirect setelah 42 detik. Melompati paksa desa.")
                             
                             upgradeClickSourceUrl = ""
                             pendingUpgradeUrl = ""
                             pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
                             heroTransferCompleted = false
+                            builderStage = "NORMAL"
                             
                             if (townBuilderInProgress) advanceTownBuilderVillage() else goToNextBuilderVillage()
                         } else {
-                            // Cek kembali status setiap 1 detik
-                            checkRedirectHandler.postDelayed(this, 1000L)
+                            // Lanjutkan pengecekan interval 1 detik berikutnya
+                            trackerHandler.postDelayed(this, 1000L)
                         }
                     }
                 }
-                checkRedirectHandler.postDelayed(checkUrlRunnable, 1000L)
+                
+                // Pemicu awal loop interval pelacakan
+                trackerHandler.postDelayed(trackRunnable, 1000L)
             }
-        }, 5000L) // Cukup tunggu 5 detik di awal untuk memicu pencarian video
+        }, 5000L)
     }
 }
-
 
     
         
