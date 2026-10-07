@@ -3166,15 +3166,24 @@ private fun clickTransferSelected() {
                                     return;
                                 }
 
-                                // Seek mendekati akhir, lalu benar-benar play sampai event "ended".
+                                // Play harus berhasil terlebih dahulu. Jangan seek sebelum play()
+                                // resolve karena perubahan currentTime saat play() masih pending
+                                // dapat menyebabkan AbortError pada WebView.
                                 const target = Math.max(0, duration - 1.0);
-                                video.currentTime = target;
-                                document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-                                document.documentElement.dataset.travianVideoSkipResult = 'video-seeked';
 
                                 Promise.resolve(video.play()).then(() => {
                                     document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                                     document.documentElement.dataset.travianVideoSkipResult = 'video-play-success';
+
+                                    try {
+                                        video.currentTime = target;
+                                        document.documentElement.dataset.travianVideoInfo = describeVideo(video);
+                                        document.documentElement.dataset.travianVideoSkipResult = 'video-seeked';
+                                    } catch (e) {
+                                        cleanup();
+                                        fail('video-seek-error');
+                                        return;
+                                    }
 
                                     const seekStartedAt = Date.now();
                                     let lastTime = video.currentTime;
@@ -3516,41 +3525,119 @@ private fun clickTransferSelected() {
                                 return r.width > 0 && r.height > 0;
                             }) || videos[0] || null;
                         };
-                        const video = findVideo();
+
                         const describeVideo = (v) => {
                             if (!v) return 'none';
                             const r = v.getBoundingClientRect();
-                            return JSON.stringify({src:v.currentSrc||v.src||'',readyState:v.readyState,duration:v.duration||0,currentTime:v.currentTime||0,paused:v.paused,display:getComputedStyle(v).display,width:Math.round(r.width),height:Math.round(r.height)});
+                            return JSON.stringify({
+                                src:v.currentSrc||v.src||'',
+                                readyState:v.readyState,
+                                duration:Number.isFinite(v.duration)?v.duration:0,
+                                currentTime:Number.isFinite(v.currentTime)?v.currentTime:0,
+                                paused:v.paused,
+                                ended:v.ended,
+                                display:getComputedStyle(v).display,
+                                width:Math.round(r.width),
+                                height:Math.round(r.height)
+                            });
                         };
-                        const seekAfterDelay = (target) => {
-                            setTimeout(() => {
-                                try {
-                                    target.currentTime = 29;
-                                    target.play().catch(() => {});
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked-29';
-                                } catch (e) {
-                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seek-error';
-                                }
-                            }, 4000);
-                        };
-                        if (video) {
+
+                        const startVideo = (video) => {
+                            if (!video) {
+                                document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
+                                return;
+                            }
+
                             document.documentElement.dataset.travianVideoInfo = describeVideo(video);
-                            seekAfterDelay(video);
+                            document.documentElement.dataset.travianVideoSkipResult = 'video-found';
+
+                            const fail = (state) => {
+                                document.documentElement.dataset.travianVideoSkipResult = state;
+                                document.documentElement.dataset.travianVideoInfo = describeVideo(video);
+                            };
+
+                            const onEnded = () => {
+                                document.documentElement.dataset.travianVideoInfo = describeVideo(video);
+                                document.documentElement.dataset.travianVideoSkipResult = 'video-ended';
+                            };
+                            const onError = () => fail('video-playback-error');
+                            video.addEventListener('ended', onEnded, {once:true});
+                            video.addEventListener('error', onError, {once:true});
+
+                            const duration = Number.isFinite(video.duration) ? video.duration : 0;
+                            if (duration <= 0) {
+                                fail('video-invalid-duration');
+                                return;
+                            }
+
+                            const target = Math.max(0, duration - 1.0);
+                            document.documentElement.dataset.travianVideoSkipResult = 'video-play-start';
+
+                            // Play dulu. Seek sebelum play() resolve dapat memicu AbortError.
+                            Promise.resolve(video.play()).then(() => {
+                                document.documentElement.dataset.travianVideoInfo = describeVideo(video);
+                                document.documentElement.dataset.travianVideoSkipResult = 'video-play-success';
+
+                                try {
+                                    video.currentTime = target;
+                                    document.documentElement.dataset.travianVideoInfo = describeVideo(video);
+                                    document.documentElement.dataset.travianVideoSkipResult = 'video-seeked';
+                                } catch (e) {
+                                    fail('video-seek-error');
+                                    return;
+                                }
+
+                                const startedAt = Date.now();
+                                let lastTime = video.currentTime;
+                                const progressTimer = setInterval(() => {
+                                    const current = video.currentTime;
+                                    document.documentElement.dataset.travianVideoInfo = describeVideo(video);
+
+                                    if (video.ended) {
+                                        clearInterval(progressTimer);
+                                        document.documentElement.dataset.travianVideoSkipResult = 'video-ended';
+                                        return;
+                                    }
+
+                                    if (!video.paused && current > lastTime + 0.02) {
+                                        document.documentElement.dataset.travianVideoSkipResult = 'video-progress';
+                                    } else if (video.paused && current <= lastTime + 0.01) {
+                                        clearInterval(progressTimer);
+                                        fail('video-playback-paused');
+                                        return;
+                                    }
+
+                                    lastTime = current;
+                                    if (Date.now() - startedAt >= 15000) {
+                                        clearInterval(progressTimer);
+                                        fail('video-timeout');
+                                    }
+                                }, 250);
+                            }).catch((error) => {
+                                document.documentElement.dataset.travianVideoSkipResult =
+                                    'video-play-failed:' + (error && error.name ? error.name : 'unknown');
+                                document.documentElement.dataset.travianVideoInfo = describeVideo(video);
+                            });
+                        };
+
+                        const video = findVideo();
+                        if (video) {
+                            setTimeout(() => startVideo(video), 4000);
                             return 'video-found-waiting-4s | ' + describeVideo(video);
                         }
+
                         const startedAt = Date.now();
                         const timer = setInterval(() => {
                             const found = findVideo();
                             if (found) {
                                 clearInterval(timer);
-                                document.documentElement.dataset.travianVideoInfo = describeVideo(found);
-                                document.documentElement.dataset.travianVideoSkipResult = 'video-found';
-                                seekAfterDelay(found);
+                                setTimeout(() => startVideo(found), 4000);
                             } else if (Date.now() - startedAt >= 15000) {
                                 clearInterval(timer);
                                 document.documentElement.dataset.travianVideoSkipResult = 'video-not-found';
                             }
                         }, 100);
+
                         return 'waiting-video';
                     })();
                 """.trimIndent()
@@ -3566,23 +3653,49 @@ private fun clickTransferSelected() {
                                 val state = Regex("\"state\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
                                 val info = Regex("\"info\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
                                 when (state) {
-                                    "video-seeked-29" -> {
-                                        logEvent("Resource Builder: $name VIDEO DOM BERHASIL — $info")
-                                        logEvent("Resource Builder: $name video sudah di-seek ke detik 29 — tunggu 5 detik")
-                                        handler.postDelayed({
-                                            if (!running || !builderInProgress || townBuilderInProgress) return@postDelayed
-                                            logEvent("Resource Builder: $name selesai tunggu setelah seek video — lanjut village berikutnya")
-                                            upgradeClickSourceUrl = ""
-                                            pendingUpgradeUrl = ""
-                                            pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
-                                            heroTransferCompleted = false
-                                            logEvent("Resource Builder: $name upgrade faster success")
-                                            goToNextBuilderVillage()
-                                        }, 5_000L)
+                                    state.startsWith("video-play-failed:") -> {
+                                        logEvent("Resource Builder: $name VIDEO PLAYBACK GAGAL — state=$state info=$info")
+                                        logEvent("Resource Builder: $name video tidak selesai — lanjut village berikutnya")
+                                        upgradeClickSourceUrl = ""
+                                        pendingUpgradeUrl = ""
+                                        pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+                                        heroTransferCompleted = false
+                                        builderStage = "ADVANCING"
+                                        goToNextBuilderVillage()
                                     }
-                                    "video-not-found", "video-seek-error" -> {
-                                        logEvent("Resource Builder: $name VIDEO DOM GAGAL — state=$state info=$info")
-                                        logEvent("Resource Builder: $name gagal seek video ($state) — lanjut village berikutnya")
+                                    "video-play-start" -> {
+                                        logEvent("Resource Builder: $name VIDEO PLAY() START — $info")
+                                        handler.postDelayed(this, 250L)
+                                    }
+                                    "video-play-success" -> {
+                                        logEvent("Resource Builder: $name VIDEO PLAY() SUCCESS — $info")
+                                        handler.postDelayed(this, 250L)
+                                    }
+                                    "video-seeked" -> {
+                                        logEvent("Resource Builder: $name VIDEO SEEK → akhir video — $info")
+                                        handler.postDelayed(this, 250L)
+                                    }
+                                    "video-progress" -> {
+                                        logEvent("Resource Builder: $name VIDEO PROGRESS — $info")
+                                        handler.postDelayed(this, 250L)
+                                    }
+                                    "video-ended" -> {
+                                        logEvent("Resource Builder: $name VIDEO ENDED — $info")
+                                        upgradeClickSourceUrl = ""
+                                        pendingUpgradeUrl = ""
+                                        pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
+                                        heroTransferCompleted = false
+                                        logEvent("Resource Builder: $name upgrade faster success")
+                                        goToNextBuilderVillage()
+                                    }
+                                    "video-not-found",
+                                    "video-seek-error",
+                                    "video-playback-paused",
+                                    "video-playback-error",
+                                    "video-timeout",
+                                    "video-invalid-duration" -> {
+                                        logEvent("Resource Builder: $name VIDEO PLAYBACK GAGAL — state=$state info=$info")
+                                        logEvent("Resource Builder: $name video tidak selesai — lanjut village berikutnya")
                                         upgradeClickSourceUrl = ""
                                         pendingUpgradeUrl = ""
                                         pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
@@ -4237,7 +4350,8 @@ private fun clickTransferSelected() {
                 }
                 message.startsWith("Town Builder:") && message.endsWith("faster success") -> message 
                 message.startsWith("Town Builder:") && message.endsWith("video not found") -> message 
-                message.startsWith("Town Builder:") && message.contains("video") -> message 
+                message.startsWith("Town Builder:") && message.contains("video") -> message  
+                message.startsWith("Town Builder:") -> message 
                 else -> return
             }
         } else {
@@ -4260,6 +4374,7 @@ private fun clickTransferSelected() {
                 message.startsWith("Resource Builder:") && message.endsWith("faster success") -> message 
                 message.startsWith("Resource Builder:") && message.endsWith("video not found") -> message 
                 message.startsWith("Resource Builder:") && message.contains("video") -> message 
+                message.startsWith("Resource Builder:") -> message 
                 else -> return
             }
         }
