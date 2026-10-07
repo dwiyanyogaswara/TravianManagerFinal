@@ -94,9 +94,7 @@ class FarmAutomationService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
 
-    // Menjaga CPU tetap berjalan saat layar mati. Handler/postDelayed saja
-    // tidak cukup untuk scheduler bot karena Android dapat menunda callback
-    // ketika device masuk Doze/deep sleep. Wake lock hanya aktif selama bot ON.
+    // CPU tetap aktif saat layar mati selama BOT ON. Tidak mengubah Faster/Builder.
     private var schedulerWakeLock: PowerManager.WakeLock? = null
 
     private fun acquireSchedulerWakeLock() {
@@ -118,14 +116,13 @@ class FarmAutomationService : Service() {
 
     private fun releaseSchedulerWakeLock() {
         try {
-            schedulerWakeLock?.let {
-                if (it.isHeld) it.release()
-            }
+            schedulerWakeLock?.let { if (it.isHeld) it.release() }
         } catch (_: Exception) {
         } finally {
             schedulerWakeLock = null
         }
     }
+
     private var webView: WebView? = null
     private var running = false
     private var pendingStartAll = false
@@ -404,10 +401,12 @@ class FarmAutomationService : Service() {
                 val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
                 val cycleActive = prefs.getBoolean("cycle_active", false)
 
-                // Jangan bergantung pada kapan Handler sempat menjalankan timeout.
-                // Saat device baru bangun dari sleep, cek elapsed time secara absolut
-                // lalu lanjutkan state machine dari titik yang benar.
-                checkModuleWallClockTimeouts(now)
+                // Pulihkan timestamp Next Run dari SharedPreferences bila field memory
+                // kosong. Ini membuat scheduler tahan terhadap service recreation.
+                if (!cycleActive && nextAt <= 0L) {
+                    val persistedNextAt = prefs.getLong("next_run_at", 0L)
+                    if (persistedNextAt > 0L) nextAt = persistedNextAt
+                }
 
                 // Scheduler heartbeat juga menjadi pengaman untuk Refresh Village.
                 // Jika callback +30 detik sempat hilang/tertunda karena WebView atau
@@ -438,33 +437,6 @@ class FarmAutomationService : Service() {
             } finally {
                 if (running) handler.postDelayed(this, 10_000L)
             }
-        }
-    }
-
-    private fun checkModuleWallClockTimeouts(now: Long) {
-        if (!running) return
-
-        // 4 menit adalah batas modul yang sudah dipakai oleh timeout Runnable.
-        // Perbedaannya: pemeriksaan ini memakai wall-clock, jadi keterlambatan
-        // Handler ketika layar mati tidak membuat modul berjalan berjam-jam.
-        if (builderInProgress && !townBuilderInProgress && resourceBuilderCycleStartedAt > 0L &&
-            now - resourceBuilderCycleStartedAt >= moduleMaxDurationMs) {
-            logEvent("Scheduler: Res Builder timeout terdeteksi dari wall-clock")
-            resourceBuilderTimeoutRunnable.run()
-            return
-        }
-
-        if (townBuilderInProgress && townBuilderCycleStartedAt > 0L &&
-            now - townBuilderCycleStartedAt >= moduleMaxDurationMs) {
-            logEvent("Scheduler: Town Builder timeout terdeteksi dari wall-clock")
-            townBuilderTimeoutRunnable.run()
-            return
-        }
-
-        if (holdCelebrationInProgress && holdCelebrationCycleStartedAt > 0L &&
-            now - holdCelebrationCycleStartedAt >= moduleMaxDurationMs) {
-            logEvent("Scheduler: Celebration timeout terdeteksi dari wall-clock")
-            celebrationTimeoutRunnable.run()
         }
     }
 
