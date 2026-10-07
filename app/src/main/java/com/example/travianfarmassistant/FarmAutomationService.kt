@@ -4104,6 +4104,7 @@ private fun clickTransferSelected() {
                 }
                 message.startsWith("Town Builder:") && message.endsWith("faster success") -> message 
                 message.startsWith("Town Builder:") && message.endsWith("video not found") -> message 
+                message.startsWith("Town Builder:") && message.contains("video") -> message 
                 else -> return
             }
         } else {
@@ -4125,6 +4126,7 @@ private fun clickTransferSelected() {
                 message == "BOT OFF" -> "BOT OFF"
                 message.startsWith("Resource Builder:") && message.endsWith("faster success") -> message 
                 message.startsWith("Resource Builder:") && message.endsWith("video not found") -> message 
+                message.startsWith("Resource Builder:") && message.contains("video") -> message 
                 else -> return
             }
         }
