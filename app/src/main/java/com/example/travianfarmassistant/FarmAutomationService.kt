@@ -3192,10 +3192,21 @@ val js = """
                 ) { rawCount ->
                     val count = rawCount.orEmpty().trim('"')
                     logEvent("$builderName: $villageName setelah 10 detik — seek ke 29 (video=$count), tunggu 7 detik")
+// 1. Ambil URL halaman WebView saat ini sebelum pindah desa
+    val currentUrl = view.url.orEmpty()
+    
+    // 2. Cetak Log gabungan baru: Menampilkan Durasi Video + Tautan URL Aktif
+    logEvent("$builderName: $villageName URL saat ini: $currentUrl")
 
                     // Setelah seek, tunggu 7 detik lalu langsung next village.
                     handler.postDelayed({
                         if (!running || !builderInProgress) return@postDelayed
+                        
+// 1. Ambil URL halaman WebView saat ini sebelum pindah desa
+    val currentUrl2 = view.url.orEmpty()
+    
+    // 2. Cetak Log gabungan baru: Menampilkan Durasi Video + Tautan URL Aktif
+    logEvent("$builderName: $villageName URL saat ini: $currentUrl2")
 
                         logEvent("$builderName: $villageName Faster selesai — lanjut village")
 
