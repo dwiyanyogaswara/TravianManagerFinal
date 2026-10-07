@@ -3275,7 +3275,7 @@ private fun clickTransferSelected() {
                                 val progress = Regex("\"progress\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
 
                                 when {
-                                    state == state == "video-ended" -> {
+                                    state == "video-ended" -> {
                                         logEvent("Town Builder: $name VIDEO ENDED — $info")
                                         logEvent("Town Builder: $name video benar-benar selesai — lanjut village berikutnya")
                                         upgradeClickSourceUrl = ""
@@ -3304,17 +3304,17 @@ private fun clickTransferSelected() {
                                         advanceTownBuilderVillage()
                                     }
 
-                                    state == state == "video-play-success" -> {
+                                    state == "video-play-success" -> {
                                         logEvent("Town Builder: $name VIDEO PLAY() SUCCESS — $info")
                                         handler.postDelayed(checkVideo, 250L)
                                     }
 
-                                    state == state == "video-progress" -> {
+                                    state == "video-progress" -> {
                                         logEvent("Town Builder: $name VIDEO PROGRESS — $progress")
                                         handler.postDelayed(checkVideo, 250L)
                                     }
 
-                                    state == state == "video-seeked" -> {
+                                    state == "video-seeked" -> {
                                         logEvent("Town Builder: $name VIDEO SEEK → akhir video — $info")
                                         handler.postDelayed(checkVideo, 250L)
                                     }
@@ -4351,7 +4351,7 @@ private fun clickTransferSelected() {
                 message.startsWith("Town Builder:") && message.endsWith("faster success") -> message 
                 message.startsWith("Town Builder:") && message.endsWith("video not found") -> message 
                 message.startsWith("Town Builder:") && message.contains("video") -> message 
-                message.startsWith("Town Builder:") -> message 
+                message.startsWith("Town Builder:")  -> message 
                 else -> return
             }
         } else {
