@@ -454,6 +454,8 @@ class MainActivity : Activity() {
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
+        // Izinkan video feature Travian autoplay walaupun WebView automation berjalan di background.
+        webView.settings.mediaPlaybackRequiresUserGesture = false
         webView.settings.databaseEnabled = true
         // Live WebView selalu memakai User-Agent desktop + wide viewport supaya
         // halaman Travian dirender seperti desktop dan area Farm List lebih lengkap.
