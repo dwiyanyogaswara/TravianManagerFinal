@@ -3093,6 +3093,8 @@ private fun clickTransferSelected() {
                 val videoView = automationWebView() ?: return@evaluateJavascript
                 val seekJs = """
                     (() => {
+                        document.documentElement.dataset.travianVideoSkipResult = '';
+                        document.documentElement.dataset.travianVideoInfo = '';
                         const findVideo = () => {
                             const videos = [...document.querySelectorAll('video')];
                             return videos.find(v => {
@@ -3101,6 +3103,11 @@ private fun clickTransferSelected() {
                             }) || videos[0] || null;
                         };
                         const video = findVideo();
+                        const describeVideo = (v) => {
+                            if (!v) return 'none';
+                            const r = v.getBoundingClientRect();
+                            return JSON.stringify({src:v.currentSrc||v.src||'',readyState:v.readyState,duration:v.duration||0,currentTime:v.currentTime||0,paused:v.paused,display:getComputedStyle(v).display,width:Math.round(r.width),height:Math.round(r.height)});
+                        };
                         const seekAfterDelay = (target) => {
                             setTimeout(() => {
                                 try {
@@ -3113,14 +3120,17 @@ private fun clickTransferSelected() {
                             }, 4000);
                         };
                         if (video) {
+                            document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                             seekAfterDelay(video);
-                            return 'video-found-waiting-4s';
+                            return 'video-found-waiting-4s | ' + describeVideo(video);
                         }
                         const startedAt = Date.now();
                         const timer = setInterval(() => {
                             const found = findVideo();
                             if (found) {
                                 clearInterval(timer);
+                                document.documentElement.dataset.travianVideoInfo = describeVideo(found);
+                                document.documentElement.dataset.travianVideoSkipResult = 'video-found';
                                 seekAfterDelay(found);
                             } else if (Date.now() - startedAt >= 15000) {
                                 clearInterval(timer);
@@ -3130,16 +3140,20 @@ private fun clickTransferSelected() {
                         return 'waiting-video';
                     })();
                 """.trimIndent()
-                logEvent("Town Builder: $name klik Upgrade 25% faster — menunggu video muncul")
+                logEvent("Town Builder: $name cek DOM video dimulai setelah klik Faster")
                 videoView.evaluateJavascript(seekJs) { rawResult ->
-                    logEvent("Town Builder: $name video terdeteksi — tunggu 4 detik lalu lompat ke detik 29")
+                    val diag = rawResult.orEmpty().trim('"').replace("\\\"", "\"")
+                    logEvent("Town Builder: $name DOM video check = $diag")
                     val checkSeeked: Runnable = object : Runnable {
                         override fun run() {
                             if (!running || !townBuilderInProgress) return
-                            videoView.evaluateJavascript("document.documentElement.dataset.travianVideoSkipResult || ''") { stateRaw ->
-                                val state = stateRaw.orEmpty().trim('"')
+                            videoView.evaluateJavascript("JSON.stringify({state:document.documentElement.dataset.travianVideoSkipResult||'',info:document.documentElement.dataset.travianVideoInfo||''})") { stateRaw ->
+                                val stateJson = stateRaw.orEmpty().trim('"').replace("\\\"", "\"")
+                                val state = Regex("\"state\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
+                                val info = Regex("\"info\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
                                 when (state) {
                                     "video-seeked-29" -> {
+                                        logEvent("Town Builder: $name VIDEO DOM BERHASIL — $info")
                                         logEvent("Town Builder: $name video sudah di-seek ke detik 29 — tunggu 5 detik")
                                         handler.postDelayed({
                                             if (!running || !townBuilderInProgress) return@postDelayed
@@ -3154,6 +3168,7 @@ private fun clickTransferSelected() {
                                         }, 5_000L)
                                     }
                                     "video-not-found", "video-seek-error" -> {
+                                        logEvent("Town Builder: $name VIDEO DOM GAGAL — state=$state info=$info")
                                         logEvent("Town Builder: $name gagal seek video ($state) — lanjut village berikutnya")
                                         upgradeClickSourceUrl = ""
                                         pendingUpgradeUrl = ""
@@ -3369,6 +3384,11 @@ private fun clickTransferSelected() {
                             }) || videos[0] || null;
                         };
                         const video = findVideo();
+                        const describeVideo = (v) => {
+                            if (!v) return 'none';
+                            const r = v.getBoundingClientRect();
+                            return JSON.stringify({src:v.currentSrc||v.src||'',readyState:v.readyState,duration:v.duration||0,currentTime:v.currentTime||0,paused:v.paused,display:getComputedStyle(v).display,width:Math.round(r.width),height:Math.round(r.height)});
+                        };
                         const seekAfterDelay = (target) => {
                             setTimeout(() => {
                                 try {
@@ -3381,14 +3401,17 @@ private fun clickTransferSelected() {
                             }, 4000);
                         };
                         if (video) {
+                            document.documentElement.dataset.travianVideoInfo = describeVideo(video);
                             seekAfterDelay(video);
-                            return 'video-found-waiting-4s';
+                            return 'video-found-waiting-4s | ' + describeVideo(video);
                         }
                         const startedAt = Date.now();
                         const timer = setInterval(() => {
                             const found = findVideo();
                             if (found) {
                                 clearInterval(timer);
+                                document.documentElement.dataset.travianVideoInfo = describeVideo(found);
+                                document.documentElement.dataset.travianVideoSkipResult = 'video-found';
                                 seekAfterDelay(found);
                             } else if (Date.now() - startedAt >= 15000) {
                                 clearInterval(timer);
@@ -3398,16 +3421,20 @@ private fun clickTransferSelected() {
                         return 'waiting-video';
                     })();
                 """.trimIndent()
-                logEvent("Resource Builder: $name klik Upgrade 25% faster — menunggu video muncul")
+                logEvent("Resource Builder: $name cek DOM video dimulai setelah klik Faster")
                 videoView.evaluateJavascript(seekJs) { rawResult ->
-                    logEvent("Resource Builder: $name video terdeteksi — tunggu 4 detik lalu lompat ke detik 29")
+                    val diag = rawResult.orEmpty().trim('"').replace("\\\"", "\"")
+                    logEvent("Resource Builder: $name DOM video check = $diag")
                     val checkSeeked: Runnable = object : Runnable {
                         override fun run() {
                             if (!running || !builderInProgress || townBuilderInProgress) return
-                            videoView.evaluateJavascript("document.documentElement.dataset.travianVideoSkipResult || ''") { stateRaw ->
-                                val state = stateRaw.orEmpty().trim('"')
+                            videoView.evaluateJavascript("JSON.stringify({state:document.documentElement.dataset.travianVideoSkipResult||'',info:document.documentElement.dataset.travianVideoInfo||''})") { stateRaw ->
+                                val stateJson = stateRaw.orEmpty().trim('"').replace("\\\"", "\"")
+                                val state = Regex("\"state\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
+                                val info = Regex("\"info\":\"([^\"]*)").find(stateJson)?.groupValues?.getOrNull(1).orEmpty()
                                 when (state) {
                                     "video-seeked-29" -> {
+                                        logEvent("Resource Builder: $name VIDEO DOM BERHASIL — $info")
                                         logEvent("Resource Builder: $name video sudah di-seek ke detik 29 — tunggu 5 detik")
                                         handler.postDelayed({
                                             if (!running || !builderInProgress || townBuilderInProgress) return@postDelayed
@@ -3421,6 +3448,7 @@ private fun clickTransferSelected() {
                                         }, 5_000L)
                                     }
                                     "video-not-found", "video-seek-error" -> {
+                                        logEvent("Resource Builder: $name VIDEO DOM GAGAL — state=$state info=$info")
                                         logEvent("Resource Builder: $name gagal seek video ($state) — lanjut village berikutnya")
                                         upgradeClickSourceUrl = ""
                                         pendingUpgradeUrl = ""
