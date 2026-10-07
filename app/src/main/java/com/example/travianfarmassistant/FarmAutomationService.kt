@@ -3086,7 +3086,7 @@ private fun clickTransferSelected() {
             (() => {
             
 
-                const btn = [...document.querySelectorAll('button.textButtonV1.purple.build.videoFeatureButton')]
+                const btn = [...document.querySelectorAll('button.videoFeatureButton')]
                     .find(el => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true');
                 if (!btn) return 'not-found';
                 btn.scrollIntoView({block:'center', inline:'center'});
