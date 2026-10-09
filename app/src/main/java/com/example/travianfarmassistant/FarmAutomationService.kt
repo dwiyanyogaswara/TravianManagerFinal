@@ -346,7 +346,7 @@ class FarmAutomationService : Service() {
 
     // Batas maksimum masing-masing modul Builder/Celebration. Jika satu modul
     // macet lebih dari 4 menit, modul dianggap selesai lalu alur dilanjutkan.
-    private val moduleMaxDurationMs = 4 * 60_000L
+    private val moduleMaxDurationMs = 6 * 60_000L
 
     private val resourceBuilderTimeoutRunnable = Runnable {
         if (!running || !builderInProgress || townBuilderInProgress || resourceBuilderCycleStartedAt <= 0L) return@Runnable
