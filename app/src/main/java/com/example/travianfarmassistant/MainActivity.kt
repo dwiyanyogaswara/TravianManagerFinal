@@ -1869,12 +1869,16 @@ class MainActivity : Activity() {
         val target = villageScanTargets.getOrNull(villageScanIndex) ?: return
         val expectedId = target.first
         val expectedIdJson = JSONObject.quote(expectedId)
+        val modeForVillage = loadVillageDataRecords().firstOrNull { it.id == expectedId }?.resourceBuilderMode
+            ?.takeIf { it in listOf("No Crop", "With Crop") } ?: "-"
+        val modeForVillageJson = JSONObject.quote(modeForVillage)
         villageScanCollectInFlight = true
 
         val js = """
             (() => {
                 const clean = s => String(s || '').replace(/\s+/g,' ').trim();
                 const expectedId = $expectedIdJson;
+                const resourceBuilderMode = $modeForVillageJson;
                 const url = location.href;
                 const match = url.match(/[?&]newdid=(\d+)/i);
                 let currentId = match ? match[1] : '';
@@ -2050,7 +2054,13 @@ class MainActivity : Activity() {
                 // Hanya field dengan ID + GID + level yang lengkap yang boleh menjadi target.
                 // Urutan tie-break tetap fieldId agar hasil deterministik.
                 resourceCandidates.sort((a,b) => a.level - b.level || a.fieldId - b.fieldId);
-                const lowestResource = resourceCandidates.find(
+                // Pilih target berdasarkan mode dropdown village. No Crop mengecualikan gid=4.
+                const eligibleResourceCandidates = resourceBuilderMode === 'No Crop'
+                    ? resourceCandidates.filter(x => x.gid !== 4)
+                    : resourceBuilderMode === 'With Crop'
+                        ? resourceCandidates
+                        : [];
+                const lowestResource = eligibleResourceCandidates.find(
                     x => !x.disabled && x.level >= 0 && x.gid >= 1 && x.gid <= 4 && x.level < 10
                 ) || null;
 
@@ -2139,7 +2149,7 @@ class MainActivity : Activity() {
                 );
 
                 AndroidFarm.onVillageScanResult(JSON.stringify({
-                    id:expectedId, name:pageName, minLevel:(lowestResource?.level ?? Math.min(...uniqueLevels)),
+                    id:expectedId, name:pageName, minLevel:(lowestResource?.level ?? -1),
                     fields:uniqueLevels, fieldNodeCount:uniqueFields, resourceFieldCount:uniqueFields,
                     debugFieldCount:debugFields.length, debugFields,
                     resourceContainer:true, activeId, activeName, url, resources, lowestResource
@@ -2217,14 +2227,15 @@ class MainActivity : Activity() {
         // Resource Builder sendiri yang menentukan village mana yang dikerjakan
         // berdasarkan checklist. Dengan begitu village L10+ tetap tersedia untuk
         // Town Builder meskipun checklist Resource Builder tidak dicentang.
+        val modeSelected = existingRecord?.resourceBuilderMode in listOf("No Crop", "With Crop")
         upsertVillageDataRecord(
             id = id,
             namaVillage = name,
             linkVillage = scannedVillageLink,
-            linkResource = lowestResourceHref.takeIf { it.isNotBlank() },
-            resourceId = lowestResourceId.takeIf { it.isNotBlank() },
-            resourceGid = lowestResourceGid.takeIf { it.isNotBlank() },
-            minLvl = minLevel,
+            linkResource = if (modeSelected) lowestResourceHref.takeIf { it.isNotBlank() } else existingRecord?.linkResource,
+            resourceId = if (modeSelected) lowestResourceId.takeIf { it.isNotBlank() } else existingRecord?.resourceId,
+            resourceGid = if (modeSelected) lowestResourceGid.takeIf { it.isNotBlank() } else existingRecord?.resourceGid,
+            minLvl = if (modeSelected && minLevel >= 0) minLevel else existingRecord?.minLvl,
             isChecklist = existingRecord?.isChecklist
         )
         if (minLevel >= 0) logEvent("Village $name Updated min L$minLevel")

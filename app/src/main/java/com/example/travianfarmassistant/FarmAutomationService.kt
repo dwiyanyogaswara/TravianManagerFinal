@@ -278,7 +278,7 @@ class FarmAutomationService : Service() {
         builderResourceLevels.clear()
 
         // Record IsChecklist=false tidak pernah masuk ke loop Builder.
-        val selected = records.filter { it.resourceBuilderMode in listOf("No Crop", "With Crop") || (it.isChecklist && it.resourceBuilderMode == "-") }
+        val selected = records.filter { it.resourceBuilderMode in listOf("No Crop", "With Crop") }
         for (record in selected) {
             builderVillages.add(record.id to record.namaVillage)
             if (record.linkVillage.isNotBlank()) builderVillageLinks[record.id] = record.linkVillage
@@ -1738,7 +1738,7 @@ class FarmAutomationService : Service() {
     private fun startAutomaticVillageRefresh() {
         debugTrace("ENTER startAutomaticVillageRefresh")
         if (!running || villageRefreshInProgress || villageRefreshCompleted) return
-        val records = loadVillageDataRecordsFromPrefs().filter { (it.resourceBuilderMode in listOf("No Crop", "With Crop") || (it.isChecklist && it.resourceBuilderMode == "-")) && it.id.isNotBlank() }
+        val records = loadVillageDataRecordsFromPrefs().filter { it.resourceBuilderMode in listOf("No Crop", "With Crop") && it.id.isNotBlank() }
         if (records.isEmpty()) {
             villageRefreshCompleted = true
             villageRefreshInProgress = false
@@ -1810,10 +1810,15 @@ class FarmAutomationService : Service() {
         val expectedId = pair.first
         val expectedName = pair.second
         val idJson = JSONObject.quote(expectedId)
+        val resourceBuilderMode = loadVillageDataRecordsFromPrefs()
+            .firstOrNull { it.id == expectedId }?.resourceBuilderMode
+            ?.takeIf { it in listOf("No Crop", "With Crop") } ?: "-"
+        val resourceBuilderModeJson = JSONObject.quote(resourceBuilderMode)
 
         val js = """
             (() => {
                 const expectedId = $idJson;
+                const resourceBuilderMode = $resourceBuilderModeJson;
                 const clean = s => String(s || '').replace(/\s+/g,' ').trim();
                 const url = location.href;
                 const match = url.match(/[?&]newdid=(\d+)/i);
@@ -1960,7 +1965,14 @@ class FarmAutomationService : Service() {
                     a.level - b.level || a.fieldId - b.fieldId
                 );
 
-                const lowest = candidates.find(
+                // Refresh mengikuti mode dropdown: No Crop mengecualikan crop (gid=4).
+                // Mode "-" tidak menghasilkan target min level untuk Resource Builder.
+                const eligibleCandidates = resourceBuilderMode === 'No Crop'
+                    ? candidates.filter(x => x.gid !== 4)
+                    : resourceBuilderMode === 'With Crop'
+                        ? candidates
+                        : [];
+                const lowest = eligibleCandidates.find(
                     x => !x.disabled && x.level >= 0 && x.gid >= 1 && x.gid <= 4 && x.level < 10
                 ) || null;
 
@@ -1987,7 +1999,7 @@ class FarmAutomationService : Service() {
                     ready:true,
                     id:expectedId,
                     name,
-                    minLevel:lowest?.level ?? Math.min(...candidates.map(x => x.level)),
+                    minLevel:lowest?.level ?? -1,
                     lowest
                 });
             })();
@@ -2035,14 +2047,14 @@ class FarmAutomationService : Service() {
                 val old = records[pos]
                 val validResourceTarget =
                     href.isNotBlank() && resourceId in 1..18 && resourceGid in 1..4
+                val modeIsActive = old.resourceBuilderMode in listOf("No Crop", "With Crop")
                 records[pos] = old.copy(
                     namaVillage = json.optString("name").trim().ifBlank { expectedName },
                     linkVillage = "$server/dorf1.php?newdid=$expectedId",
-                    //linkResource = if (validResourceTarget) href else "",
-                    linkResource = if (validResourceTarget) "$server/build.php?id=${resourceId.toString()}&gid=${resourceGid.toString()}" else "",
-                    resourceId = if (validResourceTarget) resourceId.toString() else "",
-                    resourceGid = if (validResourceTarget) resourceGid.toString() else "",
-                    minLvl = minLevel
+                    linkResource = if (modeIsActive && validResourceTarget) "$server/build.php?id=${resourceId.toString()}&gid=${resourceGid.toString()}" else old.linkResource,
+                    resourceId = if (modeIsActive && validResourceTarget) resourceId.toString() else old.resourceId,
+                    resourceGid = if (modeIsActive && validResourceTarget) resourceGid.toString() else old.resourceGid,
+                    minLvl = if (modeIsActive && minLevel >= 0) minLevel else old.minLvl
                 )
                 saveVillageDataRecordsForService(records)
 
@@ -2069,6 +2081,7 @@ class FarmAutomationService : Service() {
         records.distinctBy { it.id }.forEach { item ->
             array.put(JSONObject().apply {
                 put("IsChecklist", item.isChecklist)
+                put("ResourceBuilderMode", item.resourceBuilderMode)
                 put("NamaVillage", item.namaVillage)
                 put("Id", item.id)
                 put("LinkVillage", rebaseTravianUrl(item.linkVillage))
