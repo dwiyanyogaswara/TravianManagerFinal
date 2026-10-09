@@ -3400,6 +3400,9 @@ private fun clickTransferSelected() {
                     }
                 }, 1500L)
                 
+                var timeoutUpgradeFallbackTriggered = false
+                var timeoutUpgradeWaitSeconds = 0
+
                 val trackRunnable = object : Runnable {
                     override fun run() {
                         // Hentikan pelacakan jika bot atau proses builder dihentikan user
@@ -3440,19 +3443,45 @@ private fun clickTransferSelected() {
                             }
                         }
 
-                        // C. Batas Toleransi Pengaman (Timeout 50 Detik)
-                        if (secondsPassed >= 50) {
-                            logEvent("$builderName: $villageName Gagal Redirect setelah 42 detik. Melompati paksa desa.")
-                            
+                        // C. Timeout 50 detik: klik tombol Upgrade to Level dan tunggu redirect.
+                        if (secondsPassed >= 50 && !timeoutUpgradeFallbackTriggered) {
+                            timeoutUpgradeFallbackTriggered = true
+                            timeoutUpgradeWaitSeconds = 0
+                            logEvent("$builderName: $villageName Timeout 50 detik — klik tombol Upgrade to Level, tunggu redirect")
+
+                            view.evaluateJavascript(
+                                """
+                                (() => {
+                                    const buttons = [...document.querySelectorAll('button')];
+                                    const upgradeButton = buttons.find(b =>
+                                        /^Upgrade to level\\b/i.test((b.textContent || '').trim()) && !b.disabled
+                                    ) || buttons.find(b =>
+                                        /^Upgrade to level\\b/i.test((b.value || '').trim()) && !b.disabled
+                                    );
+                                    if (!upgradeButton) return 'upgrade-button-not-found';
+                                    upgradeButton.click();
+                                    return 'upgrade-clicked:' + (upgradeButton.textContent || upgradeButton.value || '').trim();
+                                })();
+                                """.trimIndent()
+                            ) { clickResult ->
+                                logEvent("$builderName: $villageName Timeout fallback -> ${clickResult.orEmpty().trim('"')}")
+                            }
+                            trackerHandler.postDelayed(this, 1000L)
+                        } else if (timeoutUpgradeFallbackTriggered && timeoutUpgradeWaitSeconds < 20) {
+                            timeoutUpgradeWaitSeconds++
+                            if (timeoutUpgradeWaitSeconds == 1 || timeoutUpgradeWaitSeconds % 5 == 0) {
+                                logEvent("$builderName: $villageName menunggu redirect setelah klik Upgrade ($timeoutUpgradeWaitSeconds/20 detik)")
+                            }
+                            trackerHandler.postDelayed(this, 1000L)
+                        } else if (timeoutUpgradeFallbackTriggered) {
+                            logEvent("$builderName: $villageName tidak ada redirect setelah fallback Upgrade; lanjut village berikutnya")
                             upgradeClickSourceUrl = ""
                             pendingUpgradeUrl = ""
                             pendingUpgradeCosts = longArrayOf(0L, 0L, 0L, 0L)
                             heroTransferCompleted = false
                             builderStage = "NORMAL"
-                            
                             if (townBuilderInProgress) advanceTownBuilderVillage() else goToNextBuilderVillage()
                         } else {
-                            // Lanjutkan pengecekan interval 1 detik berikutnya
                             trackerHandler.postDelayed(this, 1000L)
                         }
                     }
