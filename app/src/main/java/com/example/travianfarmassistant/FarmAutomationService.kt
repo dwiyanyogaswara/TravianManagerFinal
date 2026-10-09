@@ -3467,10 +3467,10 @@ private fun clickTransferSelected() {
                                 logEvent("$builderName: $villageName Timeout fallback -> ${clickResult.orEmpty().trim('"')}")
                             }
                             trackerHandler.postDelayed(this, 1000L)
-                        } else if (timeoutUpgradeFallbackTriggered && timeoutUpgradeWaitSeconds < 20) {
+                        } else if (timeoutUpgradeFallbackTriggered && timeoutUpgradeWaitSeconds < 3) {
                             timeoutUpgradeWaitSeconds++
                             if (timeoutUpgradeWaitSeconds == 1 || timeoutUpgradeWaitSeconds % 5 == 0) {
-                                logEvent("$builderName: $villageName menunggu redirect setelah klik Upgrade ($timeoutUpgradeWaitSeconds/20 detik)")
+                                logEvent("$builderName: $villageName menunggu redirect setelah klik Upgrade ($timeoutUpgradeWaitSeconds/3 detik)")
                             }
                             trackerHandler.postDelayed(this, 1000L)
                         } else if (timeoutUpgradeFallbackTriggered) {
