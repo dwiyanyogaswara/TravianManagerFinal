@@ -13,11 +13,18 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.net.Uri
+import android.provider.Settings
+import android.view.Gravity
+import android.view.WindowManager
+import android.view.MotionEvent
+import android.view.InputDevice
+import android.os.SystemClock
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import android.view.View
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.util.Base64
@@ -45,6 +52,21 @@ class FarmAutomationService : Service() {
 
         fun detachVisibleWebView(view: WebView) {
             if (visibleWebViewRef?.get() === view) visibleWebViewRef = null
+        }
+
+        fun attachCurrentServiceWebViewToActivity() {
+            // Compatibility name kept because MainActivity calls it.
+            // The automation WebView is now owned by the Service overlay window,
+            // not by the Activity, so minimizing the app cannot pause its renderer.
+            instanceRef?.get()?.attachWebViewToAutomationWindow()
+        }
+
+        fun keepServiceWebViewActiveInBackground() {
+            instanceRef?.get()?.keepServiceWebViewActiveInternal()
+        }
+
+        fun detachServiceLiveWebView(view: WebView) {
+            instanceRef?.get()?.detachWebViewFromAutomationWindow(view)
         }
 
         fun isRunningFromService(): Boolean {
@@ -94,6 +116,15 @@ class FarmAutomationService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
 
+    private val backgroundWebViewWatchdog = object : Runnable {
+        override fun run() {
+            if (running) {
+                keepServiceWebViewActiveInternal()
+                handler.postDelayed(this, 2500L)
+            }
+        }
+    }
+
     // CPU tetap aktif saat layar mati selama BOT ON. Tidak mengubah Faster/Builder.
     private var schedulerWakeLock: PowerManager.WakeLock? = null
 
@@ -124,6 +155,8 @@ class FarmAutomationService : Service() {
     }
 
     private var webView: WebView? = null
+    private var automationWindowManager: WindowManager? = null
+    private var automationWindowAttached = false
     private var running = false
     private var pendingStartAll = false
     private var loginInProgress = false
@@ -780,6 +813,111 @@ class FarmAutomationService : Service() {
                 }
             }
         }
+        webView?.let { attachWebViewToAutomationWindow(it) }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun attachWebViewToAutomationWindow(view: WebView) {
+        if (!Settings.canDrawOverlays(this)) {
+            logEvent("Background WebView: izin Display over other apps belum aktif")
+            return
+        }
+
+        try {
+            val wm = automationWindowManager ?: getSystemService(WINDOW_SERVICE) as WindowManager
+            automationWindowManager = wm
+
+            if (view.parent != null && view.parent !== view) {
+                (view.parent as? android.view.ViewGroup)?.removeView(view)
+            }
+
+            if (!automationWindowAttached) {
+                val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    WindowManager.LayoutParams.TYPE_PHONE
+                }
+
+                val lp = WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    type,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    android.graphics.PixelFormat.TRANSLUCENT
+                ).apply {
+                    gravity = Gravity.TOP or Gravity.START
+                    alpha = 0.0f
+                    x = 0
+                    y = 0
+                }
+
+                wm.addView(view, lp)
+                automationWindowAttached = true
+                logEvent("Background WebView: overlay window attached transparan")
+            }
+
+            view.visibility = View.VISIBLE
+            view.alpha = 1f
+            view.onResume()
+            view.resumeTimers()
+        } catch (e: Exception) {
+            automationWindowAttached = false
+            logEvent("Background WebView: gagal attach overlay — ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    private fun attachWebViewToAutomationWindow() {
+        webView?.let { attachWebViewToAutomationWindow(it) }
+    }
+
+    private fun detachWebViewFromAutomationWindow(view: WebView) {
+        try {
+            if (view.parent != null && automationWindowManager != null) {
+                automationWindowManager?.removeViewImmediate(view)
+            }
+        } catch (_: Exception) {
+        } finally {
+            automationWindowAttached = false
+        }
+    }
+
+    private fun keepServiceWebViewActiveInternal() {
+        val wv = webView ?: return
+        try {
+            // Jangan panggil pauseTimers()/onPause() saat Activity diminimize.
+            // WebView ini adalah mesin automation yang tetap harus menjalankan
+            // JavaScript, timer, redirect, dan video advertisement.
+            wv.onResume()
+            wv.resumeTimers()
+
+            if (running) {
+                wv.post {
+                    try {
+                        wv.evaluateJavascript(
+                            """
+                            (function(){
+                              try {
+                                document.querySelectorAll('video').forEach(function(v){
+                                  if (v && v.paused && v.readyState >= 2) {
+                                    var r=v.getBoundingClientRect();
+                                    if (r.width>0 && r.height>0) {
+                                      v.play().catch(function(){});
+                                    }
+                                  }
+                                });
+                              } catch(e) {}
+                            })();
+                            """.trimIndent(),
+                            null
+                        )
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logEvent("WebView background keep-alive gagal — ${e.message ?: e.javaClass.simpleName}")
+        }
     }
 
     private fun onVisibleWebViewDetachedInternal() {
@@ -789,6 +927,8 @@ class FarmAutomationService : Service() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun startAutomation() {
+        handler.removeCallbacks(backgroundWebViewWatchdog)
+        handler.post(backgroundWebViewWatchdog)
         debugTrace("ENTER startAutomation")
 
         // Jika tombol Bot diaktifkan kembali saat service/siklus lama masih aktif,
@@ -3068,6 +3208,70 @@ private fun clickTransferSelected() {
 
     
 
+    /**
+     * Kirim gesture touch ke posisi tengah video. Beberapa video/ad Travian
+     * hanya benar-benar mulai setelah menerima gesture pointer, sehingga
+     * memanggil video.play() saja tidak cukup.
+     */
+    private fun simulateVideoTouch(view: WebView) {
+        try {
+            val w = view.width.coerceAtLeast(1)
+            val h = view.height.coerceAtLeast(1)
+            val x = w / 2f
+            val y = h / 2f
+            val downTime = SystemClock.uptimeMillis()
+
+            val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
+            down.source = InputDevice.SOURCE_TOUCHSCREEN
+            val downOk = view.dispatchTouchEvent(down)
+            down.recycle()
+
+            val upTime = SystemClock.uptimeMillis() + 80L
+            val up = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, x, y, 0)
+            up.source = InputDevice.SOURCE_TOUCHSCREEN
+            val upOk = view.dispatchTouchEvent(up)
+            up.recycle()
+
+            logEvent("Video touch: DOWN=$downOk UP=$upOk @(${x.toInt()},${y.toInt()})")
+
+            // Fallback DOM pointer/click pada elemen video yang terlihat.
+            view.evaluateJavascript(
+                """
+                (() => {
+                    try {
+                        const videos = [...document.querySelectorAll('video')];
+                        const visible = videos.find(v => {
+                            const r = v.getBoundingClientRect();
+                            return r.width > 0 && r.height > 0;
+                        }) || videos[0];
+                        if (!visible) return 'video-not-found';
+
+                        const r = visible.getBoundingClientRect();
+                        const x = r.left + r.width / 2;
+                        const y = r.top + r.height / 2;
+                        for (const type of ['pointerdown','mousedown','pointerup','mouseup']) {
+                            try {
+                                visible.dispatchEvent(new MouseEvent(type, {
+                                    bubbles:true, cancelable:true, clientX:x, clientY:y,
+                                    view:window, buttons:type.includes('down') ? 1 : 0
+                                }));
+                            } catch (_) {}
+                        }
+                        try { visible.click(); } catch (_) {}
+                        return 'dom-touch-sent';
+                    } catch (e) {
+                        return 'dom-touch-error:' + e.message;
+                    }
+                })();
+                """.trimIndent()
+            ) { raw ->
+                logEvent("Video touch DOM: ${raw.orEmpty().trim('\"')}")
+            }
+        } catch (e: Exception) {
+            logEvent("Video touch gagal: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
     private fun clickFasterUpgrade() {
     if (!running || !builderInProgress) return
 
@@ -3127,11 +3331,14 @@ private fun clickTransferSelected() {
                     const findVideo = () => {
                         const videos = [...document.querySelectorAll('video')];
                         return videos.find(v => {
-                            const src = v.src || '';
+                            const src = v.currentSrc || v.src || '';
                             const isTravianVideo = src.includes('traviangames.com') || v.style.zIndex === '999999';
                             const r = v.getBoundingClientRect();
                             return isTravianVideo && r.width > 0 && r.height > 0;
-                        }) || videos || null;
+                        }) || videos.find(v => {
+                            const r = v.getBoundingClientRect();
+                            return r.width > 0 && r.height > 0;
+                        }) || videos[0] || null;
                     };
 
                     const video = findVideo();
@@ -3139,8 +3346,7 @@ private fun clickTransferSelected() {
                         try {
                             video.muted = false;
                             video.volume = 1.0;
-                            video.play().catch(() => {});
-                            return "playing[" + video.duration.toFixed(1) + "s]";
+                            return "video-found[" + (video.duration ? video.duration.toFixed(1) : "unknown") + "s]";
                         } catch (e) {
                             return "play-error";
                         }
@@ -3150,13 +3356,33 @@ private fun clickTransferSelected() {
                 """.trimIndent()
             ) { rawCount ->
                 val videoStats = rawCount.orEmpty().trim('"')
-                logEvent("$builderName: $villageName Iklan Aktif ($videoStats) — Memulai pelacakan durasi & menunggu Auto-Redirect...")
+                logEvent("$builderName: $villageName Video ditemukan ($videoStats) — kirim touch untuk memulai playback")
+                simulateVideoTouch(view)
 
                 // ====================================================================
                 // TAMBAHAN: FITUR LOG TIMELINE VIDEO SETIAP 3 DETIK & MONITOR REDIRECT
                 // ====================================================================
                 val trackerHandler = android.os.Handler(android.os.Looper.getMainLooper())
                 var secondsPassed = 0
+                var lastVideoTime = 0.0
+                var retryTouchCount = 0
+
+                trackerHandler.postDelayed({
+                    if (!running || !builderInProgress || builderStage != "WAIT_VIDEO_SKIP") return@postDelayed
+                    view.evaluateJavascript(
+                        """(() => { const v=[...document.querySelectorAll('video')].find(x=>{const r=x.getBoundingClientRect();return r.width>0&&r.height>0})||document.querySelector('video'); return v ? String(v.currentTime||0) : 'missing'; })();"""
+                    ) { raw ->
+                        val t = raw.orEmpty().trim('\"').toDoubleOrNull() ?: 0.0
+                        if (t <= 0.1 && retryTouchCount < 3) {
+                            retryTouchCount++
+                            logEvent("$builderName: $villageName Video belum bergerak (${t}s) — touch ulang #$retryTouchCount")
+                            simulateVideoTouch(view)
+                        } else {
+                            logEvent("$builderName: $villageName Video berjalan: ${t}s")
+                        }
+                        lastVideoTime = t
+                    }
+                }, 1500L)
                 
                 val trackRunnable = object : Runnable {
                     override fun run() {
@@ -3880,6 +4106,7 @@ private fun clickTransferSelected() {
         villageRefreshVillages.clear()
         pendingStartAll = false
         handler.removeCallbacksAndMessages(null)
+        webView?.let { detachWebViewFromAutomationWindow(it) }
         if (webView != null) {
             webView?.destroy()
             webView = null
@@ -4133,8 +4360,10 @@ private fun clickTransferSelected() {
 
     override fun onDestroy() {
         debugTrace("ENTER onDestroy")
+        handler.removeCallbacks(backgroundWebViewWatchdog)
         handler.removeCallbacksAndMessages(null)
         releaseSchedulerWakeLock()
+        webView?.let { detachWebViewFromAutomationWindow(it) }
         webView?.destroy()
         webView = null
         instanceRef = null
