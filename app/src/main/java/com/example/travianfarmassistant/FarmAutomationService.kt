@@ -39,6 +39,12 @@ import java.util.Date
 import java.util.Locale
 import java.lang.ref.WeakReference
 import kotlin.random.Random
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class FarmAutomationService : Service() {
     companion object {
@@ -115,6 +121,97 @@ class FarmAutomationService : Service() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+
+    // Watchdog independen dari main thread, berjalan satu kali setiap jam.
+    // Jika main thread benar-benar macet, proses diminta berhenti agar Android
+    // dapat mencoba membuat ulang START_STICKY service.
+    private var hourlyWatchdogExecutor: ScheduledExecutorService? = null
+    @Volatile private var lastSchedulerHeartbeatAt = 0L
+
+    private fun startHourlyWatchdog() {
+        if (hourlyWatchdogExecutor != null) return
+        hourlyWatchdogExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "TravianFarm-HourlyWatchdog").apply { isDaemon = true }
+        }.also { executor ->
+            executor.scheduleAtFixedRate({
+                val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+                if (!prefs.getBoolean("service_running", false)) return@scheduleAtFixedRate
+
+                val status = AtomicReference("MAIN_THREAD_NO_RESPONSE_WITHIN_30S")
+                val timedOut = AtomicBoolean(false)
+                val latch = CountDownLatch(1)
+                try {
+                    handler.post {
+                        try {
+                            if (!timedOut.get()) {
+                                val now = System.currentTimeMillis()
+                                val cycleActive = prefs.getBoolean("cycle_active", false)
+                                val savedNextRun = prefs.getLong("next_run_at", 0L)
+                                val wakeLockHeld = runCatching { schedulerWakeLock?.isHeld == true }.getOrDefault(false)
+                                val heartbeatAge = if (lastSchedulerHeartbeatAt > 0L) now - lastSchedulerHeartbeatAt else -1L
+                                status.set(
+                                    "mainThread=RESPONSIVE, running=$running, wakeLockHeld=$wakeLockHeld, " +
+                                        "cycleActive=$cycleActive, nextRunAt=$savedNextRun, " +
+                                        "schedulerHeartbeatAgeMs=$heartbeatAge, webViewReady=${webView != null}"
+                                )
+
+                                if (prefs.getBoolean("service_running", false) && !running) {
+                                    logEvent("HOURLY WATCHDOG: service flag ON tetapi running=false; mencoba recovery")
+                                    recoverAfterProcessRecreation()
+                                } else if (running && heartbeatAge > 120_000L) {
+                                    logEvent("HOURLY WATCHDOG: heartbeat scheduler stale (${heartbeatAge}ms); memasang ulang heartbeat")
+                                    armSchedulerHeartbeat()
+                                }
+
+                                if (running && !cycleActive && savedNextRun > 0L && now >= savedNextRun) {
+                                    logEvent("HOURLY WATCHDOG: Next Run terlewat; mencoba memulai cycle")
+                                    forceStartCycleAtCountdownZero()
+                                }
+
+                                if (running && webView == null) {
+                                    logEvent("HOURLY WATCHDOG: WebView null; mencoba membuat ulang WebView")
+                                    ensureServiceWebView()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            if (!timedOut.get()) status.set("MAIN_THREAD_CHECK_ERROR=${e.javaClass.simpleName}:${e.message}")
+                        } finally {
+                            latch.countDown()
+                        }
+                    }
+                    if (!latch.await(30, TimeUnit.SECONDS)) {
+                        timedOut.set(true)
+                        status.set("MAIN_THREAD_UNRESPONSIVE: no response within 30 seconds; requesting process restart")
+                    }
+                } catch (e: Exception) {
+                    status.set("WATCHDOG_ERROR=${e.javaClass.simpleName}:${e.message}")
+                }
+                writeHourlyWatchdogLog(status.get())
+                if (timedOut.get() && prefs.getBoolean("service_running", false)) {
+                    // Service memakai START_STICKY. Mematikan proses adalah opsi terakhir
+                    // saat main thread tak merespons; Android mungkin membuat ulang service.
+                    writeHourlyWatchdogLog("RECOVERY: killing unresponsive process so Android can recreate START_STICKY service")
+                    runCatching { android.os.Process.killProcess(android.os.Process.myPid()) }
+                }
+            }, 1, 1, TimeUnit.HOURS)
+        }
+    }
+
+    private fun writeHourlyWatchdogLog(message: String) {
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        val line = "$timestamp | HOURLY WATCHDOG: $message"
+        try {
+            synchronized(this) {
+                openFileOutput(logFileName, MODE_APPEND).bufferedWriter().use { it.appendLine(line) }
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun stopHourlyWatchdog() {
+        hourlyWatchdogExecutor?.shutdownNow()
+        hourlyWatchdogExecutor = null
+    }
 
     private val backgroundWebViewWatchdog = object : Runnable {
         override fun run() {
@@ -432,6 +529,7 @@ class FarmAutomationService : Service() {
     private val schedulerHeartbeatRunnable = object : Runnable {
         override fun run() {
             if (!running) return
+            lastSchedulerHeartbeatAt = System.currentTimeMillis()
             try {
                 val now = System.currentTimeMillis()
                 val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -593,6 +691,7 @@ class FarmAutomationService : Service() {
         instanceRef = WeakReference(this)
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("Farm Assistant aktif"))
+        startHourlyWatchdog()
         if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("service_running", false)) {
             acquireSchedulerWakeLock()
         }
@@ -4405,6 +4504,7 @@ private fun clickTransferSelected() {
 
     override fun onDestroy() {
         debugTrace("ENTER onDestroy")
+        stopHourlyWatchdog()
         handler.removeCallbacks(backgroundWebViewWatchdog)
         handler.removeCallbacksAndMessages(null)
         releaseSchedulerWakeLock()
