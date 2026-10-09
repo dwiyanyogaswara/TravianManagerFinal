@@ -183,6 +183,7 @@ class FarmAutomationService : Service() {
     private var cycleWaitingForRefreshRetry = false
     private data class VillageDataRecord(
         val isChecklist: Boolean,
+        val resourceBuilderMode: String = "-",
         val namaVillage: String,
         val id: String,
         val linkVillage: String,
@@ -225,6 +226,7 @@ class FarmAutomationService : Service() {
             out.add(
                 VillageDataRecord(
                     isChecklist = item.optBoolean("IsChecklist", false),
+                    resourceBuilderMode = item.optString("ResourceBuilderMode", if (item.optBoolean("IsChecklist", false)) "No Crop" else "-").let { if (it in listOf("-", "No Crop", "With Crop")) it else "-" },
                     namaVillage = item.optString("NamaVillage").trim().ifBlank { "Village $id" },
                     id = id,
                     linkVillage = rebaseTravianUrl(item.optString("LinkVillage").trim()),
@@ -247,6 +249,7 @@ class FarmAutomationService : Service() {
         records.distinctBy { it.id }.forEach { item ->
             array.put(JSONObject().apply {
                 put("IsChecklist", item.isChecklist)
+                put("ResourceBuilderMode", item.resourceBuilderMode)
                 put("NamaVillage", item.namaVillage)
                 put("Id", item.id)
                 put("LinkVillage", rebaseTravianUrl(item.linkVillage))
@@ -275,7 +278,7 @@ class FarmAutomationService : Service() {
         builderResourceLevels.clear()
 
         // Record IsChecklist=false tidak pernah masuk ke loop Builder.
-        val selected = records.filter { it.isChecklist }
+        val selected = records.filter { it.resourceBuilderMode in listOf("No Crop", "With Crop") || (it.isChecklist && it.resourceBuilderMode == "-") }
         for (record in selected) {
             builderVillages.add(record.id to record.namaVillage)
             if (record.linkVillage.isNotBlank()) builderVillageLinks[record.id] = record.linkVillage
@@ -291,7 +294,7 @@ class FarmAutomationService : Service() {
         selected.forEach { record ->
             logEvent(
                 "Resource Builder DB: ${record.namaVillage} [${record.id}] " +
-                    "check=${record.isChecklist}; village=${record.linkVillage.ifBlank { "-" }}; " +
+                    "mode=${record.resourceBuilderMode}; village=${record.linkVillage.ifBlank { "-" }}; " +
                     "resource=${record.linkResource.ifBlank { "-" }}; min=L${record.minLvl}"
             )
         }
@@ -1735,7 +1738,7 @@ class FarmAutomationService : Service() {
     private fun startAutomaticVillageRefresh() {
         debugTrace("ENTER startAutomaticVillageRefresh")
         if (!running || villageRefreshInProgress || villageRefreshCompleted) return
-        val records = loadVillageDataRecordsFromPrefs().filter { it.isChecklist && it.id.isNotBlank() }
+        val records = loadVillageDataRecordsFromPrefs().filter { (it.resourceBuilderMode in listOf("No Crop", "With Crop") || (it.isChecklist && it.resourceBuilderMode == "-")) && it.id.isNotBlank() }
         if (records.isEmpty()) {
             villageRefreshCompleted = true
             villageRefreshInProgress = false

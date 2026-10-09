@@ -102,6 +102,7 @@ class MainActivity : Activity() {
 
     private data class VillageDataRecord(
         val isChecklist: Boolean,
+        val resourceBuilderMode: String = "-",
         val namaVillage: String,
         val id: String,
         val linkVillage: String,
@@ -156,6 +157,7 @@ class MainActivity : Activity() {
             out.add(
                 VillageDataRecord(
                     isChecklist = item.optBoolean("IsChecklist", false),
+                    resourceBuilderMode = item.optString("ResourceBuilderMode", if (item.optBoolean("IsChecklist", false)) "No Crop" else "-").let { if (it in listOf("-", "No Crop", "With Crop")) it else "-" },
                     namaVillage = item.optString("NamaVillage").trim().ifBlank { "Village $id" },
                     id = id,
                     linkVillage = rebaseTravianUrl(item.optString("LinkVillage").trim()),
@@ -179,6 +181,7 @@ class MainActivity : Activity() {
         records.distinctBy { it.id }.forEach { item ->
             array.put(JSONObject().apply {
                 put("IsChecklist", item.isChecklist)
+                put("ResourceBuilderMode", item.resourceBuilderMode)
                 put("NamaVillage", item.namaVillage)
                 put("Id", item.id)
                 put("LinkVillage", rebaseTravianUrl(item.linkVillage))
@@ -210,6 +213,7 @@ class MainActivity : Activity() {
         townId: String? = null,
         townGid: String? = null,
         isChecklist: Boolean? = null,
+        resourceBuilderMode: String? = null,
         isHoldCelebration: Boolean? = null
     ) {
         debugTrace("ENTER upsertVillageDataRecord")
@@ -220,6 +224,7 @@ class MainActivity : Activity() {
         val old = records.getOrNull(index)
         val updated = VillageDataRecord(
             isChecklist = isChecklist ?: old?.isChecklist ?: false,
+            resourceBuilderMode = resourceBuilderMode ?: old?.resourceBuilderMode ?: if (old?.isChecklist == true) "No Crop" else "-",
             namaVillage = namaVillage.trim().ifBlank { old?.namaVillage ?: "Village $cleanId" },
             id = cleanId,
             linkVillage = linkVillage?.trim()?.takeIf { it.isNotBlank() } ?: old?.linkVillage.orEmpty(),
@@ -988,7 +993,6 @@ class MainActivity : Activity() {
     }
 
     private fun selectedVillageIds(): Set<String> {
-        debugTrace("ENTER selectedVillageIds")
         if (!::villageChecklist.isInitialized) return emptySet()
         val ids = mutableSetOf<String>()
         for (i in 1 until villageChecklist.childCount) {
@@ -996,8 +1000,8 @@ class MainActivity : Activity() {
             for (j in 0 until row.childCount) {
                 val card = row.getChildAt(j) as? LinearLayout ?: continue
                 val id = card.tag?.toString().orEmpty()
-                val box = card.findViewWithTag<CheckBox>("resource:$id")
-                if (box?.isChecked == true && id.isNotBlank()) ids.add(id)
+                val mode = card.findViewWithTag<Spinner>("resource-mode:$id")?.selectedItem?.toString().orEmpty()
+                if (id.isNotBlank() && mode in listOf("No Crop", "With Crop")) ids.add(id)
             }
         }
         return ids
@@ -1020,10 +1024,10 @@ class MainActivity : Activity() {
 
         val lines = mutableListOf<String>()
         lines += "DATABASE VILLAGE (${records.size})"
-        lines += "CHK | NAMA | ID | LINK VILLAGE | LINK RESOURCE | RES ID | GID | MIN LVL | TOWN ID | TOWN GID | LINK TOWN | HOLD CELEBRATION"
+        lines += "RES MODE | NAMA | ID | LINK VILLAGE | LINK RESOURCE | RES ID | GID | MIN LVL | TOWN ID | TOWN GID | LINK TOWN | HOLD CELEBRATION"
         lines += "----+------+----+--------------+---------------+--------+-----+-------+---------+----------+-----------+-----------------"
         records.forEach { item ->
-            lines += "${if (item.isChecklist) "✓" else "-"} | ${item.namaVillage} | ${item.id} | ${item.linkVillage.ifBlank { "-" }} | ${item.linkResource.ifBlank { "-" }} | ${item.resourceId.ifBlank { "-" }} | ${item.resourceGid.ifBlank { "-" }} | ${if (item.minLvl >= 0) "L${item.minLvl}" else "-"} | ${item.townId.ifBlank { "-" }} | ${item.townGid.ifBlank { "-" }} | ${item.linkTown.ifBlank { "-" }} | ${if (item.isHoldCelebration) "✓" else "-"}"
+            lines += "${item.resourceBuilderMode} | ${item.namaVillage} | ${item.id} | ${item.linkVillage.ifBlank { "-" }} | ${item.linkResource.ifBlank { "-" }} | ${item.resourceId.ifBlank { "-" }} | ${item.resourceGid.ifBlank { "-" }} | ${if (item.minLvl >= 0) "L${item.minLvl}" else "-"} | ${item.townId.ifBlank { "-" }} | ${item.townGid.ifBlank { "-" }} | ${item.linkTown.ifBlank { "-" }} | ${if (item.isHoldCelebration) "✓" else "-"}"
         }
         villageDatabaseView.text = lines.joinToString("\n")
         villageDatabaseView.setTextIsSelectable(true)
@@ -1065,28 +1069,11 @@ class MainActivity : Activity() {
             return
         }
 
-        val selectAll = CheckBox(this).apply {
-            text = "PILIH SEMUA VILLAGE"
-            isChecked = if (configured) loadedVillages.keys.all { saved.contains(it) } else true
-            setOnCheckedChangeListener { _, checked ->
-                for (i in 1 until villageChecklist.childCount) {
-                    val card = villageChecklist.getChildAt(i) as? LinearLayout ?: continue
-                    val id = card.tag?.toString().orEmpty()
-                    val box = card.findViewWithTag<CheckBox>("resource:$id")
-                    if (box != null) {
-                        box.isChecked = checked
-                        updateVillageChecklistData(id, checked)
-                    }
-                }
-                getSharedPreferences("config", MODE_PRIVATE).edit()
-                    .putBoolean("resource_builder_selection_configured", true)
-                    .putStringSet("resource_builder_selected_villages", selectedVillageIds())
-                    .putString("resource_builder_villages_json", villageSelectionJson())
-                    .apply()
-            }
+        val selectionLabel = TextView(this).apply {
+            text = "Resource Builder mode per village"
+            setPadding(8, 8, 8, 8)
         }
-        selectAll.isEnabled = !selectionControlsLocked
-        villageChecklist.addView(selectAll)
+        villageChecklist.addView(selectionLabel)
 
         val townServer = currentServerBase()
         val townOptions = listOf(
@@ -1154,18 +1141,46 @@ class MainActivity : Activity() {
                 }
             }
 
-            val box = CheckBox(this).apply {
+            val box = TextView(this).apply {
                 text = townDisplayText(currentTownKey)
-                tag = "resource:$id"
+                setPadding(8, 6, 8, 6)
+                setTextColor(Color.WHITE)
+                textSize = 14f
+            }
+
+            val resourceModeOptions = listOf("-", "No Crop", "With Crop")
+            val currentResourceMode = record?.resourceBuilderMode
+                ?: if (record?.isChecklist == true) "No Crop" else "-"
+            val resourceModeSpinner = Spinner(this).apply {
+                tag = "resource-mode:$id"
+                adapter = android.widget.ArrayAdapter(
+                    this@MainActivity,
+                    android.R.layout.simple_spinner_item,
+                    resourceModeOptions
+                ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                setSelection(resourceModeOptions.indexOf(currentResourceMode).coerceAtLeast(0))
                 isEnabled = !selectionControlsLocked
-                isChecked = if (configured) saved.contains(id) else true
-                setOnCheckedChangeListener { _, checked ->
-                    updateVillageChecklistData(id, checked)
-                    getSharedPreferences("config", MODE_PRIVATE).edit()
-                        .putBoolean("resource_builder_selection_configured", true)
-                        .putStringSet("resource_builder_selected_villages", selectedVillageIds())
-                        .putString("resource_builder_villages_json", villageSelectionJson())
-                        .apply()
+                onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                    private var initialized = false
+                    override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+                    override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, itemId: Long) {
+                        val mode = resourceModeOptions.getOrElse(position) { "-" }
+                        if (!initialized) { initialized = true; return }
+                        val recordsNow = loadVillageDataRecords()
+                        val idx = recordsNow.indexOfFirst { it.id == id }
+                        if (idx >= 0) {
+                            recordsNow[idx] = recordsNow[idx].copy(
+                                resourceBuilderMode = mode,
+                                isChecklist = mode != "-"
+                            )
+                            saveVillageDataRecords(recordsNow)
+                        }
+                        getSharedPreferences("config", MODE_PRIVATE).edit()
+                            .putBoolean("resource_builder_selection_configured", true)
+                            .putStringSet("resource_builder_selected_villages", selectedVillageIds())
+                            .putString("resource_builder_villages_json", villageSelectionJson())
+                            .apply()
+                    }
                 }
             }
 
@@ -1303,6 +1318,7 @@ class MainActivity : Activity() {
             townAndHold.addView(spinner)
             townAndHold.addView(hold)
             card.addView(box)
+            card.addView(resourceModeSpinner)
             card.addView(townAndHold)
             card.addView(otherInputRow)
             villageChecklist.addView(card)
