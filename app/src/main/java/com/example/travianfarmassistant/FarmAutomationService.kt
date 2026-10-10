@@ -3551,12 +3551,20 @@ private fun clickTransferSelected() {
                             view.evaluateJavascript(
                                 """
                                 (() => {
-                                    const buttons = [...document.querySelectorAll('button')];
-                                    const upgradeButton = buttons.find(b =>
-                                        /^Upgrade to level\\b/i.test((b.textContent || '').trim()) && !b.disabled
-                                    ) || buttons.find(b =>
-                                        /^Upgrade to level\\b/i.test((b.value || '').trim()) && !b.disabled
-                                    );
+
+
+const buttons = [...document.querySelectorAll(
+    'button.textButtonV1.green.build, button'
+)];
+
+const labelOf = b => String(b.value || b.textContent || '')
+    .replace(/\s+/g, ' ').trim();
+
+const upgradeButton = buttons.find(b => {
+    const label = labelOf(b).toLowerCase();
+    return label.startsWith('upgrade to level') && !b.disabled;
+});
+                                
                                     if (!upgradeButton) return 'upgrade-button-not-found';
                                     upgradeButton.click();
                                     return 'upgrade-clicked:' + (upgradeButton.textContent || upgradeButton.value || '').trim();
